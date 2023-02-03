@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import holidays
 from darts.dataprocessing.transformers import (
     Scaler,
     MissingValuesFiller,
@@ -10,13 +11,19 @@ from darts import TimeSeries
 import darts.metrics as metrics
 from darts.models import NBEATSModel
 from darts.dataprocessing.transformers import Scaler
+import seaborn as sns
 
 class Processor():
-    def __init__(self, revenue, spendings, folder):
-        self.revenue = revenue
-        self.spendings = spendings
+    def __init__(self, folder):
         self.folder = folder
         self.files = self.files_from_folder()
+        if '.DS_Store' in self.files:
+            self.files.remove('.DS_Store')
+        self.revenue = self.files[0]
+        self.spendings = self.files[-1]
+        self.files = self.files_from_folder()
+        self.col_list_spendings = ['mic', 'ticker', 'time', 'nw_total_sales_a_total','nw_total_sales_b_total']
+        self.col_list_revenue = ['mic', 'ticker', 'time', 'Sales_Actual_fiscal','Sales_Estimate_fiscal']
     
     def path_finder(self, name):
         
@@ -29,15 +36,22 @@ class Processor():
         folder_path = self.path_finder(self.folder)
         return [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
-    def create_df(self, folder, file_name):
+    def create_df(self, file_name):
         """ 
         
         """
-        path = str(self.path_finder(folder) + '/' + file_name)
+        path = str(self.path_finder(self.folder) + '/' + file_name)
     
-        return pd.read_excel(self.path_finder(path))
+        df =  pd.read_excel(self.path_finder(path))
+        
+        if file_name == self.revenue:
+            return df[self.col_list_revenue]
+        
+        if file_name == self.spendings:
+            return df[self.col_list_spendings]
 
-    def merge_revenue_spendings(self, df_spendings, df_revenue):
+
+    def merge_spendings_revenue(self, df_spendings, df_revenue):
         """ 
         
         """
@@ -54,7 +68,6 @@ class Processor():
         df['year'] = df['time'].dt.year
         df['month'] = df['time'].dt.month
         df['quarter'] = df['time'].dt.quarter
-
         return df
         
     def split_column(self, df, delimiter, column):
@@ -67,15 +80,25 @@ class Processor():
         
         return pd.concat([df.drop(column, axis=1), split_df], axis=1)
 
+    def add_holiday(self, df):
+       
+        us_holidays = holidays.US()
+        def is_holiday(date):
+            return int(date in us_holidays)
+        # Apply the function to the date index and add the result as a new column 'is_holiday'
+        df['is_holiday'] = df.index.map(is_holiday)
+        return df
+
     def convert_columns_to_numeric(self, df):
         """ 
         
         """
+       
         for col in df.columns:
             try:
                 pd.to_numeric(df[col], errors='raise')
                 df[col] = pd.to_numeric(df[col])
-            except ValueError:
+            except ValueError or TypeError:
                 pass
 
         return df
@@ -120,17 +143,31 @@ class Processor():
         return TimeSeries.from_dataframe(self, df=df, time_col=time_col, freq=freq)
 
     def series_scale(self, series):
+        """ 
+        
+        """
         scaler = Scaler()
         return scaler.fit_transform(series)
 
     def series_rescale(self, series):
+        """ 
+        
+        """
         scaler = Scaler()
         return scaler.inverse_transform(series)
 
     def series_fill_missing_vals(self, series):
+        """ 
+        
+        """
         filler = MissingValuesFiller()
         return filler.transform(series=series, method='quadratic')
         
     def series_train_test(self, series, proportion=0.75):
+        """ 
+        
+        """
         train, validation = series.split_before(proportion)
         return train, validation
+    
+    
