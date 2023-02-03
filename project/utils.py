@@ -83,10 +83,18 @@ class Processor():
     def add_holiday(self, df):
        
         us_holidays = holidays.US()
+
         def is_holiday(date):
-            return int(date in us_holidays)
-        # Apply the function to the date index and add the result as a new column 'is_holiday'
-        df['is_holiday'] = df.index.map(is_holiday)
+            if date in us_holidays:
+                return 1
+            else:
+                return 0
+        df['time'] = pd.to_datetime(df['time'])
+        df["is_holiday"] = df["time"].apply(lambda x: is_holiday(x))
+        df['is_weekend'] = df['time'].dt.weekday.isin([5,6])
+        df['is_workday'] = (~df['is_holiday']) & (~df['is_weekend']).astype(int)
+        df['is_weekend'] = df['time'].dt.weekday.isin([5,6]).astype(int)
+
         return df
 
     def convert_columns_to_numeric(self, df):
