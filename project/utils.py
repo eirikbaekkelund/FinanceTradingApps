@@ -13,7 +13,7 @@ from darts.models import NBEATSModel
 from darts.dataprocessing.transformers import Scaler
 import seaborn as sns
 
-class Processor():
+class DataFrameProcessor():
     def __init__(self, folder):
         self.folder = folder
         self.files = self.files_from_folder()
@@ -50,7 +50,6 @@ class Processor():
         if file_name == self.spendings:
             return df[self.col_list_spendings]
 
-
     def merge_spendings_revenue(self, df_spendings, df_revenue):
         """ 
         
@@ -81,7 +80,9 @@ class Processor():
         return pd.concat([df.drop(column, axis=1), split_df], axis=1)
 
     def add_holiday(self, df):
-       
+        """ 
+        
+        """
         us_holidays = holidays.US()
 
         def is_holiday(date):
@@ -89,12 +90,20 @@ class Processor():
                 return 1
             else:
                 return 0
+            
         df['time'] = pd.to_datetime(df['time'])
         df["is_holiday"] = df["time"].apply(lambda x: is_holiday(x))
         df['is_weekend'] = df['time'].dt.weekday.isin([5,6])
         df['is_workday'] = (~df['is_holiday']) & (~df['is_weekend']).astype(int)
         df['is_weekend'] = df['time'].dt.weekday.isin([5,6]).astype(int)
 
+        return df
+    
+    def add_war_to_df(self,df):
+        """ 
+        
+        """
+        df['is_war'] = (pd.to_datetime(df['time']) >= '2022-02-24').astype(int)
         return df
 
     def convert_columns_to_numeric(self, df):
@@ -110,45 +119,57 @@ class Processor():
                 pass
 
         return df
+    
+    def encode_index(self, df, column='mic', encoding = {'XAMS' :  0, 'XLON' : 1, 'XMEX' : 2, 'XNAS' : 3, 'XNYS' : 4, 'XPAR' : 5, 'XTKS' : 6, 'XTSE'  : 7, 'NaN' : 8} ):
+        """  
+        
+        """
+    
+        if encoding is not None:
+            df[column] = df[column].map(encoding)
+        else:
+            unique_names = df[column].unique()
+            encoding = {name: i for i, name in enumerate(unique_names)}
+            df[column] = df[column].map(encoding)
+        
+        return df
 
-    def train_target_slicing(self, df, target='', time_col='date'):
+class ModelPipeline():
+    
+    def __init__(self, df):
+        self.df = df
+    
+    def train_target_slicing(self, target='', time_col='date'):
         """
         
         """
         
         assert target != '', "Target column must be specified"
-        assert target in df.columns, "Target column must be in Data Frame columns"
+        assert target in self.df.columns, "Target column must be in Data Frame columns"
         
-        cols_train = list(df.columns)
+        cols_train = list(self.df.columns)
         cols_train.remove(target)
         col_target = [time_col, target]
         
-        X, y = df[cols_train], df[col_target]
+        X, y = self.df[cols_train], self.df[col_target]
         return  X, y
 
-    def train_test_split(self, df, proportion_train, col_target='', time_col='date'):
+    def train_test_split(self, proportion_train, col_target='', time_col='date'):
         """ 
         
         """
        
-        X, y = self.train_target_slicing(df=df, target=col_target, time_col=time_col)
+        X, y = self.train_target_slicing(self.df, target=col_target, time_col=time_col)
         n = X.shape[0]
         n_train = int( n * proportion_train )
+        
         return X.iloc[:n_train,:], y.iloc[:n_train,:], X.iloc[n_train:,:], y.iloc[n_train:,:]
 
-    def set_date(self, df):
-        """ 
-        
-        """
-        df['date'] = pd.to_datetime(df['date'], format='%d %b %Y')
-        # df['date'] =  df['date'].dt.to_period('D')
-        return df
-
-    def create_darts_series_from_df(self, df, time_col='date', freq='D'):
+    def create_darts_series_from_df(self, time_col='date', freq='D'):
         """  
         
         """
-        return TimeSeries.from_dataframe(self, df=df, time_col=time_col, freq=freq)
+        return TimeSeries.from_dataframe(self.df, time_col=time_col, freq=freq)
 
     def series_scale(self, series):
         """ 
@@ -177,5 +198,3 @@ class Processor():
         """
         train, validation = series.split_before(proportion)
         return train, validation
-    
-    
