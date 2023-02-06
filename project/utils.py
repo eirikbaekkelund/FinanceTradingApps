@@ -153,7 +153,9 @@ class ModelPipeline():
         """ 
         
         """
-        df['time'] = pd.to_datetime(df['time'])
+        df = df.copy()
+        # df['time'] = pd.to_datetime(df['time'])
+        df.loc[:, 'time'] = pd.to_datetime(df['time'])
         df = df.set_index('time')
         df = df.resample('Q').mean(numeric_only=True)
         df = df.asfreq('Q')
