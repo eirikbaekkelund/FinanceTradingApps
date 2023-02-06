@@ -11,9 +11,11 @@ from darts import TimeSeries
 import darts.metrics as metrics
 from darts.models import NBEATSModel
 from darts.dataprocessing.transformers import Scaler
-import seaborn as sns
 
 class DataFrameProcessor():
+    """ 
+    
+    """
     def __init__(self, folder):
         self.folder = folder
         self.files = self.files_from_folder()
@@ -26,7 +28,9 @@ class DataFrameProcessor():
         self.col_list_revenue = ['mic', 'ticker', 'time', 'Sales_Actual_fiscal','Sales_Estimate_fiscal']
     
     def path_finder(self, name):
+        """ 
         
+        """
         return os.path.abspath(name)
 
     def files_from_folder(self):
@@ -34,6 +38,7 @@ class DataFrameProcessor():
         
         """
         folder_path = self.path_finder(self.folder)
+        
         return [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
 
     def create_df(self, file_name):
@@ -67,6 +72,7 @@ class DataFrameProcessor():
         df['year'] = df['time'].dt.year
         df['month'] = df['time'].dt.month
         df['quarter'] = df['time'].dt.quarter
+        
         return df
         
     def split_column(self, df, delimiter, column):
@@ -79,7 +85,8 @@ class DataFrameProcessor():
         
         return pd.concat([df.drop(column, axis=1), split_df], axis=1)
 
-    def add_holiday(self, df):
+    # ONLY FOR DAYS estimates
+    def add_labor_days(self, df):
         """ 
         
         """
@@ -91,12 +98,11 @@ class DataFrameProcessor():
             else:
                 return 0
             
-        df['time'] = pd.to_datetime(df['time'])
         df["is_holiday"] = df["time"].apply(lambda x: is_holiday(x))
         df['is_weekend'] = df['time'].dt.weekday.isin([5,6])
         df['is_workday'] = (~df['is_holiday']) & (~df['is_weekend']).astype(int)
         df['is_weekend'] = df['time'].dt.weekday.isin([5,6]).astype(int)
-
+        
         return df
     
     def add_war_to_df(self,df):
@@ -104,6 +110,7 @@ class DataFrameProcessor():
         
         """
         df['is_war'] = (pd.to_datetime(df['time']) >= '2022-02-24').astype(int)
+        
         return df
 
     def convert_columns_to_numeric(self, df):
@@ -117,7 +124,7 @@ class DataFrameProcessor():
                 df[col] = pd.to_numeric(df[col])
             except ValueError or TypeError:
                 pass
-
+        
         return df
     
     def encode_index(self, df, column='mic', encoding = {'XAMS' :  0, 'XLON' : 1, 'XMEX' : 2, 'XNAS' : 3, 'XNYS' : 4, 'XPAR' : 5, 'XTKS' : 6, 'XTSE'  : 7, 'NaN' : 8} ):
@@ -134,42 +141,53 @@ class DataFrameProcessor():
         
         return df
 
+
 class ModelPipeline():
+    """ 
     
+    """
     def __init__(self, df):
         self.df = df
     
-    def train_target_slicing(self, target='', time_col='date'):
-        """
-        
-        """
-        
-        assert target != '', "Target column must be specified"
-        assert target in self.df.columns, "Target column must be in Data Frame columns"
-        
-        cols_train = list(self.df.columns)
-        cols_train.remove(target)
-        col_target = [time_col, target]
-        
-        X, y = self.df[cols_train], self.df[col_target]
-        return  X, y
-
-    def train_test_split(self, proportion_train, col_target='', time_col='date'):
+    def set_df_index(self, df):
         """ 
         
         """
-       
-        X, y = self.train_target_slicing(self.df, target=col_target, time_col=time_col)
-        n = X.shape[0]
-        n_train = int( n * proportion_train )
+        df['time'] = pd.to_datetime(df['time'])
+        df = df.set_index('time')
+        df = df.resample('Q').mean(numeric_only=True)
+        df = df.asfreq('Q')
         
-        return X.iloc[:n_train,:], y.iloc[:n_train,:], X.iloc[n_train:,:], y.iloc[n_train:,:]
-
-    def create_darts_series_from_df(self, time_col='date', freq='D'):
-        """  
+        return df
+    
+    def convert_df_to_series(self,df,covariates, target, static):
+        """ 
         
         """
-        return TimeSeries.from_dataframe(self.df, time_col=time_col, freq=freq)
+        df = self.set_df_index(df)
+        if covariates is None:
+            covariates = ['nw_total_sales_a_total', 'nw_total_sales_b_total','Sales_Estimate_fiscal', 
+                        'year','month', 'quarter', 'is_war',]
+        
+        # TODO add scaling functions and imputations to missing values
+
+        covs = TimeSeries.from_dataframe(df, value_cols=covariates, static_covariates=df[static], freq='Q')
+        target = TimeSeries.from_dataframe(df,value_cols=target, freq='Q')
+        
+        return covs, target
+    
+    def get_covs_target_dict(self, covariates=None, target='Sales_Actual_fiscal', static='mic'):
+        """ 
+        
+        """
+        return {tag : self.convert_df_to_series(self.df[self.df['ticker'] == tag], covariates=covariates, target=target, static=static) for tag in self.df['ticker']}
+    
+    def train_test_split(self, series, proportion=0.75):
+        """ 
+        
+        """
+        train, validation = series.split_before(proportion)
+        return train, validation
 
     def series_scale(self, series):
         """ 
@@ -191,10 +209,4 @@ class ModelPipeline():
         """
         filler = MissingValuesFiller()
         return filler.transform(series=series, method='quadratic')
-        
-    def series_train_test(self, series, proportion=0.75):
-        """ 
-        
-        """
-        train, validation = series.split_before(proportion)
-        return train, validation
+
