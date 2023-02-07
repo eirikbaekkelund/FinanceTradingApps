@@ -95,7 +95,7 @@ class DataFrameProcessor():
         
         return df
 
-    def convert_columns_to_numeric(self, df):
+    def numeric_columns(self, df):
         """ 
         
         """
@@ -105,7 +105,7 @@ class DataFrameProcessor():
                 pd.to_numeric(df[col], errors='raise')
                 df[col] = pd.to_numeric(df[col])
             except ValueError or TypeError:
-                pass
+                df = df.drop(col, axis=1)
         
         return df
     
@@ -167,16 +167,17 @@ class DataFrameProcessor():
         nan_companies = self.get_nan_columns(df)
 
         for tic in nan_companies.keys():
-            if 'Sales_Actual_fiscal' in nan_companies[tic] or 'Sales_Actual_fiscal' in nan_companies[tic]:
+            if 'Sales_Actual_fiscal' in nan_companies[tic] and 'Sales_Actual_fiscal' in nan_companies[tic]:
                 df_copy = df[df['ticker'] == tic]
                 proportion_actual = df_copy[df_copy['Sales_Actual_fiscal'].isna()].shape[0] / df_copy.shape[0]
                 proportion_estimate = df_copy[df_copy['Sales_Estimate_fiscal'].isna()].shape[0] / df_copy.shape[0]
 
-                if proportion_actual <= tresh_proportion and proportion_estimate <= tresh_proportion:
+                if proportion_actual >= tresh_proportion and proportion_estimate >= tresh_proportion:
 
                     df = df[df['ticker'] != tic]
         
         return df
+  
     
     def linear_least_squares(self, df, plot, col='nw_total_sales_b_total'):
         """ 
@@ -188,16 +189,17 @@ class DataFrameProcessor():
         
         nan_rows = df_copy[df_copy[col].isna()]
         value_rows = df_copy[~df_copy[col].isna()]
-
+       
         X, y = value_rows.drop(col, axis=1), value_rows[col]
         X['bias'] = np.ones(X.shape[0])
         weights = np.linalg.lstsq(X, y, rcond=None)[0]
         nan_rows = nan_rows.drop(col, axis=1)
         nan_rows['bias'] = np.ones(nan_rows.shape[0])
-        new_vals = nan_rows @ weights 
+        new_vals = nan_rows @ weights
+
         
         df.loc[nan_rows.index, col] = new_vals
-        
+
         if plot:
             plt.scatter(nan_rows.index, new_vals, label='Imputed Values', marker='x', color='red', alpha=.8)
             plt.scatter(y.index, y, label='Actual Values', marker='o', color='blue', alpha=.8)
@@ -238,10 +240,10 @@ class DataFrameProcessor():
         for tic in nan_companies.keys():
 
             if set(nan_companies[tic]) == set(['nw_total_sales_b_total']):
-                df_copy, original_index, nan_indices = self.get_nan_indices(df, tic, col='nw_total_sales_b_total')
+                df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col='nw_total_sales_b_total')
                 
                 if set(nan_indices) == set([0,1,2]) or set(nan_indices) == set([0,1,2,3]) or set(nan_indices) == set([0,1]) or set(nan_indices) == set([0]) or len(nan_indices) <= 5:
-                    df = self.least_square_imputation(df, df_copy, tic, original_index, plot=plot)
+                    df = self.least_square_imputation(df, df_copy, tic, original_indices, plot=plot)
         
         return df
 
@@ -286,6 +288,10 @@ class ModelPipeline():
             covariates = ['nw_total_sales_a_total', 'nw_total_sales_b_total','Sales_Estimate_fiscal', 
                         'year','month', 'quarter', 'is_war',]
         
+        for column in covariates:
+            if df[column].isna().sum() / df.shape[0] > 0.5:
+                df = df.drop(column, axis=1)
+        
         # TODO add scaling functions and imputations to missing values
 
         covs = TimeSeries.from_dataframe(df, value_cols=covariates, static_covariates=df[static], freq='Q')
@@ -327,4 +333,25 @@ class ModelPipeline():
         filler = MissingValuesFiller()
         return filler.transform(series=series, method='quadratic')
 
+
+# VISUALIZATION TOOLS
+def plot_scatter_log(self,df, col1, col2):
+
+    fig, ax = plt.subplots(ncols=2, nrows=1, figsize=(12,5))
+    
+    ax[0].scatter(df[col1], df[col2], color='blue', marker='x', alpha=0.5);
+    ax[0].set_ylabel(f'{col2}')
+    ax[0].set_xlabel(f'{col1}')
+    
+    ax[1].scatter(np.log(df[col1]), np.log(df[col2]), color='red', marker='x', alpha=0.5);
+    ax[1].set_ylabel(f'{col2}')
+    ax[1].set_xlabel(f'{col1}')
+    
+def plot_scatter(self, df, col1, col2):
+    plt.scatter(df[col1], df[col2], color='blue', marker='x')
+    plt.title(f'{col1} vs. {col2}')
+    plt.ylabel(f'{col2}')
+    plt.xlabel(f'{col2}')
+
+    plt.show()
     
