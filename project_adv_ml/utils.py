@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 import holidays
+import numpy as np
+from matplotlib import pyplot as plt
 from darts.dataprocessing.transformers import (
     Scaler,
     MissingValuesFiller,
@@ -63,13 +65,110 @@ class DataFrameProcessor():
                     df_revenue[['ticker', 'time', 'Sales_Actual_fiscal', 'Sales_Estimate_fiscal']], 
                     on=['ticker', 'time'], how='left'
                     )
+    
+    def remove_small_tickers(self, df, n=9):
+        """ 
+        
+        """
+        ticker_counts = df['ticker'].value_counts()
+        df = df[df['ticker'].isin(ticker_counts[ticker_counts >= n].index)]
+        
+        return df
+    def get_nan_columns(self, df):
+        """ 
+        
+        """
+        nans_dict = {}
+        
+        for tic in np.unique(df.ticker):
+            
+            df_copy = df[df['ticker'] == tic]
+            df_copy = df_copy.reset_index(drop=False)
+            nans_dict[tic] = []
+            
+            for col in df_copy.columns:
+                nan_count = df_copy[col].isnull().sum()
+                if nan_count > 0:
+                    nans_dict[tic].append(col)
+        
+        return nans_dict
+
+    def remove_missing_ground_truth(self, df, tresh_proportion=0.4):
+        """ 
+        
+        """
+        nan_companies = self.get_nan_columns(df)
+
+        for tic in nan_companies.keys():
+            if 'Sales_Actual_fiscal' in nan_companies[tic] or 'Sales_Actual_fiscal' in nan_companies[tic]:
+                df_copy = df[df['ticker'] == tic]
+                proportion_actual = df_copy[df_copy['Sales_Actual_fiscal'].isna()].shape[0] / df_copy.shape[0]
+                proportion_estimate = df_copy[df_copy['Sales_Estimate_fiscal'].isna()].shape[0] / df_copy.shape[0]
+
+                if proportion_actual <= tresh_proportion and proportion_estimate <= tresh_proportion:
+
+                    df = df[df['ticker'] != tic]
+        
+        return df
+    
+    def linear_least_squares(self, df, plot, col='nw_total_sales_b_total'):
+        """ 
+        
+        """
+        df_copy = df.copy()
+        # dropping stationary / mutual information / non-numeric columns
+        df_copy = df_copy.drop(['month', 'ticker', 'mic', 'time'], axis=1)
+        
+        nan_rows = df_copy[df_copy[col].isna()]
+        value_rows = df_copy[~df_copy[col].isna()]
+
+        X, y = value_rows.drop(col, axis=1), value_rows[col]
+        X['bias'] = np.ones(X.shape[0])
+        weights = np.linalg.lstsq(X, y, rcond=None)[0]
+        nan_rows = nan_rows.drop('nw_total_sales_b_total', axis=1)
+        nan_rows['bias'] = np.ones(nan_rows.shape[0])
+        new_vals = nan_rows @ weights 
+        
+        df.loc[nan_rows.index, col] = new_vals
+        
+        if plot:
+            plt.plot(nan_rows.index, new_vals, label='Imputed Values', marker='x', color='red', alpha=0.6)
+            plt.plot(y.index, y, label='Actual Values', marker='o', color='blue', alpha=0.6)
+            plt.plot(df.index, df[col], label='Concatenated', marker='^', color='black', linestyle='--', alpha=0.3)
+            plt.legend()
+            plt.show()
+            
+        return df
+    
+    def impute_bankB_early_nans(self, df, plot=False):
+        """ 
+        
+        """
+        nan_companies = self.get_nan_columns(df)
+
+        for tic in nan_companies.keys():
+
+            if set(nan_companies[tic]) == set(['nw_total_sales_b_total']):
+                df_copy = df[df['ticker'] == tic]
+                original_index = df_copy.index
+                df_copy = df_copy.reset_index(drop=False)
+                nan_indices = df_copy[df_copy['nw_total_sales_b_total'].isnull()].index.tolist()
+                
+                if set(nan_indices) == set([0,1,2]) or set(nan_indices) == set([0,1,2,3]) or set(nan_indices) == set([0,1]) or set(nan_indices) == set([0]):
+                
+                    df_copy = self.linear_least_squares(df_copy, plot=plot)
+                    df_copy = df_copy.set_index(original_index)
+                    df.loc[df['ticker'] == tic,'nw_total_sales_b_total'] = df_copy['nw_total_sales_b_total']
+            
+        return df
 
     def create_stationary_covariates(self,df):
         """ 
         
         """
         df['time'] = pd.to_datetime(df['time'])
-        df['year'] = df['time'].dt.year
+        # account for starting year
+        df['year'] = df['time'].dt.year - 2018 
         df['month'] = df['time'].dt.month
         df['quarter'] = df['time'].dt.quarter
         
