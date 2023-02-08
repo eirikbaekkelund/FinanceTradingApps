@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import holidays
 import numpy as np
+import seaborn as sns
 from matplotlib import pyplot as plt
 from darts.dataprocessing.transformers import (
     Scaler,
@@ -141,6 +142,24 @@ class DataFrameProcessor():
         
         return df
     
+    def print_nans_companies(self, df):
+        """ 
+    
+        """
+        for tic in np.unique(df.ticker):
+            df_copy = df[df['ticker'] == tic]
+            
+            if df_copy.isnull().values.any():
+                print('\n')
+                print(f"Ticker: {tic}, # Data points: {df_copy.shape[0]}")
+            df_copy = df_copy.reset_index(drop=False)
+            
+            for col in df_copy.columns:
+                nan_count = df_copy[col].isnull().sum()
+                if nan_count > 0:
+                    nan_indices = df_copy[df_copy[col].isnull()].index.tolist()
+                    print(f"Column: {col}, NaN Indices: {nan_indices}")
+    
     def get_nan_columns(self, df):
         """ 
         
@@ -199,11 +218,12 @@ class DataFrameProcessor():
 
         
         df.loc[nan_rows.index, col] = new_vals
-
+        # TODO add comparison if Sales Actual vs. Sales Estimate
         if plot:
             plt.scatter(nan_rows.index, new_vals, label='Imputed Values', marker='x', color='red', alpha=.8)
             plt.scatter(y.index, y, label='Actual Values', marker='o', color='blue', alpha=.8)
             plt.plot(df.index, df[col], label='Concatenated', color='black', linestyle='--', alpha=0.5)
+            plt.title(f"Company: {df['ticker'].unique()[0]}, column: {col}")
             plt.legend()
             plt.show()
             
@@ -231,27 +251,35 @@ class DataFrameProcessor():
         return df
         
         
-    def impute_bankB_nans(self, df, plot=False):
+    def impute_nans_singular_column(self, df, col='nw_total_sales_b_total',plot=False, max_plots=10):
         """ 
         
         """
+        
+        assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
+
+        n_plots = 0
         nan_companies = self.get_nan_columns(df)
 
         for tic in nan_companies.keys():
 
-            if set(nan_companies[tic]) == set(['nw_total_sales_b_total']):
-                df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col='nw_total_sales_b_total')
+            if set(nan_companies[tic]) == set([col]):
+                df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col=col)
                 
                 if set(nan_indices) == set([0,1,2]) or set(nan_indices) == set([0,1,2,3]) or set(nan_indices) == set([0,1]) or set(nan_indices) == set([0]) or len(nan_indices) <= 5:
                     df = self.least_square_imputation(df, df_copy, tic, original_indices, plot=plot)
+                    n_plots += 1
+                    if n_plots == max_plots:
+                        plot = False
         
         return df
+    
     
     def replace_sales(self, df, tic, company_list, plot, proportion, col_actual='Sales_Actual_fiscal', col_estimate = 'Sales_Estimate_fiscal'):
         """ 
         
         """
-        def get_index_updates(df_idx, ticker, col_act, col_est):
+        def get_index_sets(df_idx, ticker, col_act, col_est):
             """ 
             
             """
@@ -262,7 +290,9 @@ class DataFrameProcessor():
 
             return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
         
-        actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_updates(df, tic, col_actual, col_estimate)
+        actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_sets(df, tic, col_actual, col_estimate)
+        
+        # replace NaNs with normals when one column has values and the other doesn't
         
         if len(actual_not_estimate) != 0 or len(estimate_not_actual) != 0:
             mean_abs_diff = np.mean(abs(df[col_actual] - df[col_estimate]))
@@ -273,7 +303,8 @@ class DataFrameProcessor():
                 other_col = col_estimate if col == col_actual else col_actual
                 df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
         
-      
+
+        # should try to do Nearest Neighbor related for this scenario
         if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
             
             window = len(actual_and_estimate) + 2
@@ -293,7 +324,7 @@ class DataFrameProcessor():
 
     
     
-    def sales_imputation(self,df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
+    def fiscal_sales_imputation(self,df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
         """ 
         
         """
@@ -303,7 +334,7 @@ class DataFrameProcessor():
         for tic, company_list in nan_companies.items():
             
             if col_actual in company_list or col_estimate in company_list:
-                df.loc[df['ticker'] == tic, :] = self.replace_sales(df, tic, company_list, plot=True, proportion=proportion)
+                df.loc[df['ticker'] == tic, :] = self.replace_sales(df, tic, company_list, plot=plot, proportion=proportion)
                 df_copy = df[df['ticker'] == tic]
                 
                 if df_copy[col_estimate].isna().sum() == 0:
@@ -311,15 +342,25 @@ class DataFrameProcessor():
                     if set(nan_companies[tic]) == set([col_actual, n_sales_a]):
                         df_less_nans = df_copy.drop(col_actual, axis=1)
                         _, original_indices, nan_indices = self.get_nan_indices(df, tic, col=n_sales_a)
-                        df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot, col=n_sales_a)
+                        df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_a)
                     
                     elif set(nan_companies[tic]) == set([col_actual, n_sales_b]):
                         df_less_nans = df_copy.drop(col_actual, axis=1)
                         _, original_indices, nan_indices = self.get_nan_indices(df, tic, col=n_sales_b)
                         
                         if len(original_indices) /len(nan_indices) <= proportion:
-                            df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot, col=n_sales_b)
+                            df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_b)
         
+        return df
+    
+    def impute_singular_nan_column(self, df, proportion):
+        nan_companines = self.get_nan_columns(df)
+
+        for tic, column_list in nan_companines.items():
+            if len(column_list) == 1:
+                df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col=column_list[0])
+                if len(nan_indices) / len(original_indices) <= proportion:
+                    df = self.least_square_imputation(df, df_copy, tic, original_indices, col=column_list[0],plot=True)
         return df
 
     def create_stationary_covariates(self,df):
@@ -340,8 +381,9 @@ class ModelPipeline():
     
     """
     def __init__(self, df):
+        training_cols = 'abs_diff_sales','abs_diff_costumers', 'prod_sales', 'prod_n_customers'
         self.df = df
-    
+        
     def set_df_index(self, df):
         """ 
         
@@ -370,7 +412,7 @@ class ModelPipeline():
         
         return covs, target
     
-    def get_covs_target_dict(self, covariates=None, target='Sales_Actual_fiscal', static='mic'):
+    def get_covs_target_dict(self, covariates=None, target='Sales_Actual_fiscal', static=['mic', 'quarter', 'month', 'year']):
         """ 
         
         """
@@ -425,4 +467,37 @@ def plot_scatter(df, col1, col2):
     plt.xlabel(f'{col2}')
 
     plt.show()
+
+def histplot(df, col1, col2):
+    sns.histplot(data=df[[col1,col2]], log_scale=True)
+
+def correlation_matrix(df):
+    f = plt.figure(figsize=(19, 15))
+    plt.matshow(df.corr(), fignum=f.number)
+    plt.xticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14, rotation=45)
+    plt.yticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14)
+    cb = plt.colorbar()
+    cb.ax.tick_params(labelsize=14)
+    plt.title('Correlation Matrix', fontsize=17, fontweight='bold');
+    plt.show()
+
+
+def plot_sales_comparison(df, col1 = 'Sales_Actual_fiscal', col2 = 'Sales_Estimate_fiscal', max_plots=10):
+    
+    assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
+    n_plots = 0
+    
+    for tic in df['ticker'].unique():
+        if n_plots < max_plots:
+            df_copy = df[df['ticker'] == tic]
+            plt.plot(df_copy['Sales_Actual_fiscal'].index,df_copy['Sales_Actual_fiscal'], label='Actual', marker='x', color='red')
+            plt.plot(df_copy['Sales_Estimate_fiscal'].index,df_copy['Sales_Estimate_fiscal'], label='Estimate', marker='o')
+            plt.xlabel(col1)
+            plt.ylabel(col2)
+            plt.title(tic)
+            plt.legend()
+            plt.show()
+            n_plots += 1
+
+
     
