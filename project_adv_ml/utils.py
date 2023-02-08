@@ -246,6 +246,81 @@ class DataFrameProcessor():
                     df = self.least_square_imputation(df, df_copy, tic, original_indices, plot=plot)
         
         return df
+    
+    def replace_sales(self, df, tic, company_list, plot, proportion, col_actual='Sales_Actual_fiscal', col_estimate = 'Sales_Estimate_fiscal'):
+        """ 
+        
+        """
+        def get_index_updates(df_idx, ticker, col_act, col_est):
+            """ 
+            
+            """
+            _, _, nan_indice_actual = self.get_nan_indices(df_idx, ticker, col=col_act)
+            _, _, nan_indices_estimate = self.get_nan_indices(df_idx, ticker, col=col_est)
+            actual_set, estimate_set = set(nan_indice_actual), set(nan_indices_estimate)
+            
+
+            return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
+        
+        actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_updates(df, tic, col_actual, col_estimate)
+        
+        if len(actual_not_estimate) != 0 or len(estimate_not_actual) != 0:
+            mean_abs_diff = np.mean(abs(df[col_actual] - df[col_estimate]))
+            std_dev = np.sqrt(mean_abs_diff)
+
+            for col in [col_estimate, col_actual]:
+                mask = df[col].isna()
+                other_col = col_estimate if col == col_actual else col_actual
+                df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
+        
+      
+        if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
+            
+            window = len(actual_and_estimate) + 2
+            rolling_mean_actual = df[col_actual].rolling(window, min_periods=1).mean()
+            rolling_mean_estimate = df[col_estimate].rolling(window, min_periods=1).mean()
+                
+            if 0 in actual_and_estimate or 1 in actual_and_estimate:    
+                df[col_estimate] = df[col_estimate].fillna(rolling_mean_actual).bfill()
+            else:
+                df[col_estimate] = df[col_estimate].fillna(rolling_mean_estimate).ffill()
+            
+            df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col=col_actual)
+            if len(original_indices) / len(nan_indices) < proportion:
+                df = self.least_square_imputation(df, df_copy, tic, original_indices, plot=plot, col=col_actual)
+        
+        return df
+
+    
+    
+    def sales_imputation(self,df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
+        """ 
+        
+        """
+        
+        nan_companies = self.get_nan_columns(df)
+
+        for tic, company_list in nan_companies.items():
+            
+            if col_actual in company_list or col_estimate in company_list:
+                df.loc[df['ticker'] == tic, :] = self.replace_sales(df, tic, company_list, plot=True, proportion=proportion)
+                df_copy = df[df['ticker'] == tic]
+                
+                if df_copy[col_estimate].isna().sum() == 0:
+                    
+                    if set(nan_companies[tic]) == set([col_actual, n_sales_a]):
+                        df_less_nans = df_copy.drop(col_actual, axis=1)
+                        _, original_indices, nan_indices = self.get_nan_indices(df, tic, col=n_sales_a)
+                        df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot, col=n_sales_a)
+                    
+                    elif set(nan_companies[tic]) == set([col_actual, n_sales_b]):
+                        df_less_nans = df_copy.drop(col_actual, axis=1)
+                        _, original_indices, nan_indices = self.get_nan_indices(df, tic, col=n_sales_b)
+                        
+                        if len(original_indices) /len(nan_indices) <= proportion:
+                            df = self.least_square_imputation(df, df_less_nans, tic, original_indices, plot, col=n_sales_b)
+        
+        return df
 
     def create_stationary_covariates(self,df):
         """ 
@@ -287,10 +362,6 @@ class ModelPipeline():
         if covariates is None:
             covariates = ['nw_total_sales_a_total', 'nw_total_sales_b_total','Sales_Estimate_fiscal', 
                         'year','month', 'quarter', 'is_war',]
-        
-        for column in covariates:
-            if df[column].isna().sum() / df.shape[0] > 0.5:
-                df = df.drop(column, axis=1)
         
         # TODO add scaling functions and imputations to missing values
 
@@ -335,7 +406,7 @@ class ModelPipeline():
 
 
 # VISUALIZATION TOOLS
-def plot_scatter_log(self,df, col1, col2):
+def plot_scatter_log(df, col1, col2):
 
     fig, ax = plt.subplots(ncols=2, nrows=1, figsize=(12,5))
     
@@ -347,7 +418,7 @@ def plot_scatter_log(self,df, col1, col2):
     ax[1].set_ylabel(f'{col2}')
     ax[1].set_xlabel(f'{col1}')
     
-def plot_scatter(self, df, col1, col2):
+def plot_scatter(df, col1, col2):
     plt.scatter(df[col1], df[col2], color='blue', marker='x')
     plt.title(f'{col1} vs. {col2}')
     plt.ylabel(f'{col2}')
