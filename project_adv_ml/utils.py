@@ -15,6 +15,9 @@ import darts.metrics as metrics
 from darts.models import NBEATSModel
 from darts.dataprocessing.transformers import Scaler
 
+
+############ DATA PROCESSOR ##################
+
 class DataFrameProcessor():
     """ 
     
@@ -363,7 +366,7 @@ class DataFrameProcessor():
                     df = self.least_square_imputation(df, df_copy, tic, original_indices, col=column_list[0],plot=True)
         return df
 
-    def create_stationary_covariates(self,df):
+    def create_stationary_covariates(self, df):
         """ 
         
         """
@@ -374,16 +377,41 @@ class DataFrameProcessor():
         df['quarter'] = df['time'].dt.quarter
         
         return df
-
-
-class ModelPipeline():
-    """ 
     
-    """
-    def __init__(self, df):
-        training_cols = 'abs_diff_sales','abs_diff_costumers', 'prod_sales', 'prod_n_customers'
-        self.df = df
+   
+    def add_sinus(self,df, col):
+        """
         
+        """
+        df[f'sine_{col}'] = np.sin(df[col])
+        return df
+    
+    def add_prod(self, df):
+        """ 
+        
+        """
+        df['prod_sales'] = df['Sales_Actual_fiscal'] * df['Sales_Estimate_fiscal']
+        df['prod_n_customers'] = df['nw_total_sales_a_total'] * df['nw_total_sales_b_total']
+        return df
+    
+    def min_max_scaler(self,df):
+        for tic in df.ticker.unique():
+            df_copy = df[df.ticker == tic].copy()
+
+            for col in ['nw_total_sales_a_total','nw_total_sales_b_total', 'Sales_Actual_fiscal','Sales_Estimate_fiscal']:
+                df_copy[col] =  (df_copy[col] - np.min(df_copy[col])) / (np.max(df_copy[col]) - np.min(df_copy[col]))
+                df.loc[df.ticker == tic, col] = df_copy[col]
+        df = df.dropna(how='any')
+        
+        return df
+    
+    def get_numeric_cols(self,df):
+        return df[[col for col in df.columns if df[col].dtype in ['int64', 'float64']]]
+
+    def keep_high_corr_cols(self,df, cols_to_remove=['mic', 'month', 'quarter', 'year']):
+        df = df.drop(cols_to_remove, axis=1)
+        return df
+    
     def set_df_index(self, df):
         """ 
         
@@ -395,28 +423,40 @@ class ModelPipeline():
         df = df.asfreq('Q')
         
         return df
+
+        
     
-    def convert_df_to_series(self,df,covariates, target, static):
+############## DARTS MODEL ##############
+
+class ModelPipeline():
+    """ 
+    
+    """
+    def __init__(self):
+        pass
+            
+    def convert_df_to_series(self,df,covariates, target):
         """ 
         
         """
-        df = self.set_df_index(df)
+       
         if covariates is None:
-            covariates = ['nw_total_sales_a_total', 'nw_total_sales_b_total','Sales_Estimate_fiscal', 
-                        'year','month', 'quarter', 'is_war',]
+            covariates = [col for col in df.columns if df[col].dtype in ['int64', 'float64']]
+            try:
+                covariates.remove(target)
+            except ValueError:
+                pass
         
-        # TODO add scaling functions and imputations to missing values
-
-        covs = TimeSeries.from_dataframe(df, value_cols=covariates, static_covariates=df[static], freq='Q')
+        covs = TimeSeries.from_dataframe(df, value_cols=covariates, freq='Q')
         target = TimeSeries.from_dataframe(df,value_cols=target, freq='Q')
         
         return covs, target
     
-    def get_covs_target_dict(self, covariates=None, target='Sales_Actual_fiscal', static=['mic', 'quarter', 'month', 'year']):
+    def get_covs_target_dict(self, df, covariates=None, target='Sales_Actual_fiscal'):
         """ 
         
         """
-        return {tag : self.convert_df_to_series(self.df[self.df['ticker'] == tag], covariates=covariates, target=target, static=static) for tag in self.df['ticker']}
+        return {tag : self.convert_df_to_series(df[df['ticker'] == tag], covariates=covariates, target=target) for tag in df['ticker']}
     
     def train_test_split(self, series, proportion=0.75):
         """ 
@@ -447,20 +487,31 @@ class ModelPipeline():
         return filler.transform(series=series, method='quadratic')
 
 
-# VISUALIZATION TOOLS
-def plot_scatter_log(df, col1, col2):
 
+
+############# VISUALIZATION TOOLS ################
+
+
+def plot_scatter_log(df, col1, col2):
+    """
+    
+    """
     fig, ax = plt.subplots(ncols=2, nrows=1, figsize=(12,5))
     
     ax[0].scatter(df[col1], df[col2], color='blue', marker='x', alpha=0.5);
     ax[0].set_ylabel(f'{col2}')
     ax[0].set_xlabel(f'{col1}')
+    ax[0].set_title('Unnormalized')
     
     ax[1].scatter(np.log(df[col1]), np.log(df[col2]), color='red', marker='x', alpha=0.5);
     ax[1].set_ylabel(f'{col2}')
     ax[1].set_xlabel(f'{col1}')
+    ax[1].set_title('Log-scaled')
     
 def plot_scatter(df, col1, col2):
+    """
+    
+    """
     plt.scatter(df[col1], df[col2], color='blue', marker='x')
     plt.title(f'{col1} vs. {col2}')
     plt.ylabel(f'{col2}')
@@ -468,10 +519,13 @@ def plot_scatter(df, col1, col2):
 
     plt.show()
 
-def histplot(df, col1, col2):
+def plot_hist(df, col1, col2):
     sns.histplot(data=df[[col1,col2]], log_scale=True)
 
-def correlation_matrix(df):
+def plot_correlation_matrix(df):
+    """
+    
+    """
     f = plt.figure(figsize=(19, 15))
     plt.matshow(df.corr(), fignum=f.number)
     plt.xticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14, rotation=45)
@@ -483,7 +537,9 @@ def correlation_matrix(df):
 
 
 def plot_sales_comparison(df, col1 = 'Sales_Actual_fiscal', col2 = 'Sales_Estimate_fiscal', max_plots=10):
+    """
     
+    """
     assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
     n_plots = 0
     
@@ -498,6 +554,43 @@ def plot_sales_comparison(df, col1 = 'Sales_Actual_fiscal', col2 = 'Sales_Estima
             plt.legend()
             plt.show()
             n_plots += 1
+
+def plot_anamoly_detection(df, plot=False, max_plots=10):
+    """
+    
+    """
+    assert max_plots <= len(df.ticker.unique()), "cannot print more arrays than there are tickers"
+    
+    def detect_anomaly_ewma(timeseries):
+        """ 
+        
+        """
+        span = len(timeseries)
+        timeseries = pd.Series(timeseries)
+        average = timeseries.ewm(span=span).mean()
+        residual = timeseries - average
+        
+        return np.where(np.abs(residual) > 3 * residual.std(), 1, 0)
+
+    n_plots = 0
+    
+    for tic in df.ticker.unique():
+        df_anomoly = df[df.ticker == tic]
+        n_anamolies = 0
+        for col in ['nw_total_sales_a_total','nw_total_sales_b_total','Sales_Actual_fiscal','Sales_Estimate_fiscal']:
+            anamolies = detect_anomaly_ewma(df_anomoly[col])
+            if 1 in list(anamolies) and plot:
+                plt.plot(range(df_anomoly.shape[0]) ,df_anomoly[col], label= f"{col}, indices = {np.where(anamolies == 1)}")
+                n_anamolies += 1
+        if n_anamolies >= 1 and plot:
+            plt.title(f"{tic}")
+            plt.legend(loc='best')
+            plt.show()
+            
+            n_plots += 1
+        if n_plots == max_plots and plot:
+            break
+
 
 
     
