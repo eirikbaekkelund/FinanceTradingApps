@@ -91,6 +91,13 @@ class DataFrameProcessor():
         
         return df
     
+    def remove_time_cols(self,df):
+        """ 
+        
+        """
+        df = df.drop(['year','month','quarter','time'], axis=1)
+        return df
+    
     def add_war_to_df(self,df):
         """ 
         
@@ -136,7 +143,7 @@ class DataFrameProcessor():
                     on=['ticker', 'time'], how='left'
                     )
     
-    def remove_small_tickers(self, df, n=9):
+    def remove_short_series(self, df, n=9):
         """ 
         
         """
@@ -325,8 +332,6 @@ class DataFrameProcessor():
         
         return df
 
-    
-    
     def fiscal_sales_imputation(self,df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
         """ 
         
@@ -356,14 +361,20 @@ class DataFrameProcessor():
         
         return df
     
-    def impute_singular_nan_column(self, df, proportion):
+    def impute_singular_nan_column(self, df, proportion=0.35, max_plots=10):
+        assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
+    
         nan_companines = self.get_nan_columns(df)
-
+        n_plots = 0
+        
         for tic, column_list in nan_companines.items():
             if len(column_list) == 1:
                 df_copy, original_indices, nan_indices = self.get_nan_indices(df, tic, col=column_list[0])
                 if len(nan_indices) / len(original_indices) <= proportion:
-                    df = self.least_square_imputation(df, df_copy, tic, original_indices, col=column_list[0],plot=True)
+                    df = self.least_square_imputation(df, df_copy, tic, original_indices, col=column_list[0],plot=plot)
+                    n_plots += 1
+                    if n_plots == max_plots:
+                        plot = False
         return df
 
     def create_stationary_covariates(self, df):
@@ -412,20 +423,7 @@ class DataFrameProcessor():
         df = df.drop(cols_to_remove, axis=1)
         return df
     
-    def set_df_index(self, df):
-        """ 
-        
-        """
-        df = df.copy()
-        df.loc[:, 'time'] = pd.to_datetime(df['time'])
-        df = df.set_index('time')
-        df = df.resample('Q').mean(numeric_only=True)
-        df = df.asfreq('Q')
-        
-        return df
 
-        
-    
 ############## DARTS MODEL ##############
 
 class ModelPipeline():
@@ -434,7 +432,17 @@ class ModelPipeline():
     """
     def __init__(self):
         pass
-            
+    
+    def set_df_index(self, df):
+        """ 
+        
+        """
+        df = df.copy()
+        df = df.reset_index(drop=True)
+        return df
+    
+
+
     def convert_df_to_series(self,df,covariates, target):
         """ 
         
@@ -447,8 +455,8 @@ class ModelPipeline():
             except ValueError:
                 pass
         
-        covs = TimeSeries.from_dataframe(df, value_cols=covariates, freq='Q')
-        target = TimeSeries.from_dataframe(df,value_cols=target, freq='Q')
+        covs = TimeSeries.from_dataframe(df, value_cols=covariates) # freq='Q')
+        target = TimeSeries.from_dataframe(df,value_cols=target) # freq='Q')
         
         return covs, target
     
@@ -456,7 +464,9 @@ class ModelPipeline():
         """ 
         
         """
-        return {tag : self.convert_df_to_series(df[df['ticker'] == tag], covariates=covariates, target=target) for tag in df['ticker']}
+        ticker_series = {tic : self.set_df_index(df[df['ticker'] == tic]) for tic in df.ticker.unique()}
+        ticker_series = {tic : df[df['ticker'] == tic] for tic in df.ticker.unique()}
+        return {tic : self.convert_df_to_series(ticker_series[tic], covariates=covariates, target=target) for tic in ticker_series.keys()}
     
     def train_test_split(self, series, proportion=0.75):
         """ 
@@ -485,8 +495,6 @@ class ModelPipeline():
         """
         filler = MissingValuesFiller()
         return filler.transform(series=series, method='quadratic')
-
-
 
 
 ############# VISUALIZATION TOOLS ################
@@ -590,7 +598,3 @@ def plot_anamoly_detection(df, plot=False, max_plots=10):
             n_plots += 1
         if n_plots == max_plots and plot:
             break
-
-
-
-    
