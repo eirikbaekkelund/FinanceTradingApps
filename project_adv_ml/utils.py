@@ -497,6 +497,7 @@ class ModelPipeline():
         return filler.transform(series=series, method='quadratic')
 
 
+
 ############# VISUALIZATION TOOLS ################
 
 
