@@ -52,14 +52,15 @@ class DataFrameProcessor():
         
         """
         path = str(self.path_finder(self.folder) + '/' + file_name)
-    
+
         df =  pd.read_excel(self.path_finder(path))
-        
+    
         if file_name == self.revenue:
             return df[self.col_list_revenue]
         
         if file_name == self.spendings:
             return df[self.col_list_spendings]
+
     
     def split_column(self, df, delimiter, column):
         """ 
@@ -71,7 +72,7 @@ class DataFrameProcessor():
         
         return pd.concat([df.drop(column, axis=1), split_df], axis=1)
 
-    # ONLY FOR DAYS estimates
+    # ONLY FOR DAYS estimates if we do not have aggregated data, and make daily preds
     def add_labor_days(self, df):
         """ 
         
@@ -96,14 +97,6 @@ class DataFrameProcessor():
         
         """
         df = df.drop(['year','month','quarter','time'], axis=1)
-        return df
-    
-    def add_war_to_df(self,df):
-        """ 
-        
-        """
-        df['is_war'] = (pd.to_datetime(df['time']) >= '2022-02-24').astype(int)
-        
         return df
 
     def numeric_columns(self, df):
@@ -175,7 +168,7 @@ class DataFrameProcessor():
         
         """
         nans_dict = {}
-        
+        # TODO make more efficient?
         for tic in np.unique(df.ticker):
             
             df_copy = df[df['ticker'] == tic]
@@ -194,7 +187,7 @@ class DataFrameProcessor():
         
         """
         nan_companies = self.get_nan_columns(df)
-
+        # TODO make more efficient?
         for tic in nan_companies.keys():
             if 'Sales_Actual_fiscal' in nan_companies[tic] and 'Sales_Actual_fiscal' in nan_companies[tic]:
                 df_copy = df[df['ticker'] == tic]
@@ -271,6 +264,7 @@ class DataFrameProcessor():
         n_plots = 0
         nan_companies = self.get_nan_columns(df)
 
+        # TODO make more efficient?
         for tic in nan_companies.keys():
 
             if set(nan_companies[tic]) == set([col]):
@@ -433,48 +427,116 @@ class ModelPipeline():
     def __init__(self):
         pass
     
+    def remove_time_cols(self, df):
+        """ 
+        
+        """
+        # these columns could be used as static covariates for the forecasting process
+        # except from the ticker (tag of company at exchange)
+        for col in ['year','month','quarter', 'ticker']:
+            
+            try:
+                df = df.drop(col, axis=1)
+            except KeyError:
+                # if column is not present we continue
+                continue
+        
+        return df
+
     def set_df_index(self, df):
         """ 
         
         """
         df = df.copy()
+        df = self.remove_time_cols(df)
         df = df.reset_index(drop=True)
+        
         return df
-    
 
-
-    def convert_df_to_series(self,df,covariates, target):
+    def convert_df_to_series(self, df, covariates=['nw_total_sales_a_total','nw_total_sales_b_total','Sales_Estimate_fiscal'], target='Sales_Actual_fiscal'):
         """ 
         
         """
-       
+        df = df.copy()
+        df = self.remove_time_cols(df)
+        df = df.reset_index(drop=True)
+        
         if covariates is None:
             covariates = [col for col in df.columns if df[col].dtype in ['int64', 'float64']]
+            
             try:
                 covariates.remove(target)
+                covariates.remove('mic')
+            
             except ValueError:
                 pass
         
-        covs = TimeSeries.from_dataframe(df, value_cols=covariates) # freq='Q')
-        target = TimeSeries.from_dataframe(df,value_cols=target) # freq='Q')
+        covs = TimeSeries.from_dataframe(df, value_cols=covariates, freq='Q')
+        target = TimeSeries.from_dataframe(df,value_cols=target, freq='Q')
         
         return covs, target
-    
+
     def get_covs_target_dict(self, df, covariates=None, target='Sales_Actual_fiscal'):
         """ 
         
         """
-        ticker_series = {tic : self.set_df_index(df[df['ticker'] == tic]) for tic in df.ticker.unique()}
-        ticker_series = {tic : df[df['ticker'] == tic] for tic in df.ticker.unique()}
+        
+        ticker_series =  {tic : self.set_df_index(df[df['ticker'] == tic]) for tic in df.ticker.unique()}
+        
         return {tic : self.convert_df_to_series(ticker_series[tic], covariates=covariates, target=target) for tic in ticker_series.keys()}
-    
-    def train_test_split(self, series, proportion=0.75):
+
+    def drop_short_sequences(self, series_dict, min_length = 12):
         """ 
         
         """
-        train, validation = series.split_before(proportion)
-        return train, validation
+        new_dict = {}
+        for key, vals in series_dict.items():
 
+            length = vals[0].data_array().shape[0]
+            if length < min_length:
+                continue
+            else:
+                new_dict[key] = vals
+        return new_dict
+
+    def split_covariates_target(self, covariate_series, target, proportion=0.9):
+        """ 
+        
+        """
+        n_split = int( len(target.data_array())*proportion )
+        target_train, target_test = target[:n_split], target[n_split:]
+        past_covariates, future_covariates = covariate_series[:n_split], covariate_series[n_split:]
+
+        return past_covariates, future_covariates, target_train, target_test
+
+    def model_input(self, series_dict):
+        """ 
+        
+        """
+        covs_past, covs_future, targets_train, targets_test = [], [], [], []
+        
+        for tic in series_dict.keys():
+            cov_p, cov_f, target_tr, target_te = self.split_covariates_target(series_dict[tic][0], series_dict[tic][1])
+            covs_past.append(cov_p)
+            covs_future.append(cov_f)
+            targets_train.append(target_tr)
+            targets_test.append(target_te)
+
+        
+        return covs_past, covs_future, targets_train, targets_test
+
+    def get_input_output_chunks(self, series, t_predict=1):
+        min_length = np.inf
+
+        for serie in series:
+            length = len(serie.data_array())
+            if length < min_length:
+                min_length = length
+        
+        input_length = min_length - t_predict
+        
+        return input_length, t_predict
+    
     def series_scale(self, series):
         """ 
         
@@ -555,8 +617,8 @@ def plot_sales_comparison(df, col1 = 'Sales_Actual_fiscal', col2 = 'Sales_Estima
     for tic in df['ticker'].unique():
         if n_plots < max_plots:
             df_copy = df[df['ticker'] == tic]
-            plt.plot(df_copy['Sales_Actual_fiscal'].index,df_copy['Sales_Actual_fiscal'], label='Actual', marker='x', color='red')
-            plt.plot(df_copy['Sales_Estimate_fiscal'].index,df_copy['Sales_Estimate_fiscal'], label='Estimate', marker='o')
+            plt.plot(df_copy['Sales_Actual_fiscal'].index, df_copy['Sales_Actual_fiscal'], label='Actual', marker='x', color='red')
+            plt.plot(df_copy['Sales_Estimate_fiscal'].index, df_copy['Sales_Estimate_fiscal'], label='Estimate', marker='o')
             plt.xlabel(col1)
             plt.ylabel(col2)
             plt.title(tic)
