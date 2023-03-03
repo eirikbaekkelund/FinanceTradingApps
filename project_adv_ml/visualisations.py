@@ -5,7 +5,6 @@ import pandas as pd
 
 ############# VISUALIZATION TOOLS ################
 
-
 def plot_scatter_log(df, col1, col2):
     """
     
