@@ -188,12 +188,16 @@ class DataFrameProcessor():
         """
         nan_companies = self.get_nan_columns(df)
         # TODO make more efficient?
+        
         for tic in nan_companies.keys():
+        
             if 'Sales_Actual_fiscal' in nan_companies[tic] and 'Sales_Actual_fiscal' in nan_companies[tic]:
+        
                 df_copy = df[df['ticker'] == tic]
+        
                 proportion_actual = df_copy[df_copy['Sales_Actual_fiscal'].isna()].shape[0] / df_copy.shape[0]
+        
                 proportion_estimate = df_copy[df_copy['Sales_Estimate_fiscal'].isna()].shape[0] / df_copy.shape[0]
-
                 if proportion_actual >= tresh_proportion and proportion_estimate >= tresh_proportion:
 
                     df = df[df['ticker'] != tic]
@@ -291,7 +295,6 @@ class DataFrameProcessor():
             _, _, nan_indices_estimate = self.get_nan_indices(df_idx, ticker, col=col_est)
             actual_set, estimate_set = set(nan_indice_actual), set(nan_indices_estimate)
             
-
             return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
         
         actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_sets(df, tic, col_actual, col_estimate)
@@ -383,20 +386,42 @@ class DataFrameProcessor():
         
         return df
     
-   
-    def add_sinus(self,df, col):
-        """
-        
-        """
-        df[f'sine_{col}'] = np.sin(df[col])
-        return df
-    
     def add_prod(self, df):
         """ 
         
         """
         df['prod_sales'] = df['Sales_Actual_fiscal'] * df['Sales_Estimate_fiscal']
         df['prod_n_customers'] = df['nw_total_sales_a_total'] * df['nw_total_sales_b_total']
+        
+        return df
+
+    def add_proportion_ab(self, df):
+        df['proportion_ab'] = df['Sales_Actual_fiscal'] / ( df['nw_total_sales_a_total'] +  df['nw_total_sales_b_total'] )
+        
+        return df
+
+    def drop_time_cols(self, df):
+        df = df.drop(columns=['year', 'month', 'quarter', 'mic'], axis=1)
+        
+        return df
+
+    def add_quarterly_yoy(self, df):
+        df['quarterly_yoy'] = df.groupby(['ticker'])['Sales_Actual_fiscal'].pct_change(periods=4)
+        # replace first 4 quarters with zeros
+        df['quarterly_yoy'] = df['quarterly_yoy'].fillna(0)
+        
+        return df
+    
+    def drop_low_correlation_features(self, df):
+        """ 
+        Drop features with low correlation with Sales_Actual_fiscal
+        or nans in the correlation
+        """
+        cov = df.groupby('ticker').apply(lambda x: x.corrwith(x['Sales_Actual_fiscal'])).mean()
+        cov = cov.dropna()
+        df = df[cov.keys().tolist()]
+        df = df.drop(columns=cov[cov < 0.1].index, axis=1)
+        
         return df
     
     def min_max_scaler(self,df):
