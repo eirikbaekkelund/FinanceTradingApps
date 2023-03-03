@@ -3,16 +3,29 @@ import numpy as np
 from darts.dataprocessing.transformers import Scaler, MissingValuesFiller
 
 
-def set_df_index( df):
+def set_df_index(df):
     """ 
     
     """
     df = df.copy()
     df = df.reset_index(drop=True)
-    
+
     return df
 
-def convert_df_to_series( df, covariates=['nw_total_sales_a_total','nw_total_sales_b_total','Sales_Estimate_fiscal'], target='Sales_Actual_fiscal'):
+def scale_series(series):
+    """ 
+    
+    """
+    scaler = Scaler()
+    scaler.fit_transform(series)
+    series = scaler.transform(series)
+
+    series = series.astype(np.float64)
+
+    return series
+
+
+def convert_df_to_series(df,covariates=['nw_total_sales_a_total','nw_total_sales_b_total','Sales_Estimate_fiscal'], target='Sales_Actual_fiscal'):
     """ 
     
     """
@@ -23,18 +36,19 @@ def convert_df_to_series( df, covariates=['nw_total_sales_a_total','nw_total_sal
         covariates = [col for col in df.columns if df[col].dtype in ['int64', 'float64']]
         
         try:
-            covariates.remove(target)
-            covariates.remove('mic')
-        
+            covariates.remove(target)        
         except ValueError:
             pass
     
     covs = TimeSeries.from_dataframe(df, value_cols=covariates, freq='Q')
     target = TimeSeries.from_dataframe(df,value_cols=target, freq='Q')
     
+    covs = scale_series(covs)
+    target = scale_series(target)
+    
     return covs, target
 
-def get_covs_target_dict( df, covariates=None, target='Sales_Actual_fiscal'):
+def get_covs_target_dict(df, covariates=None, target='Sales_Actual_fiscal'):
     """ 
     
     """
@@ -43,57 +57,71 @@ def get_covs_target_dict( df, covariates=None, target='Sales_Actual_fiscal'):
     
     return {tic : convert_df_to_series(ticker_series[tic], covariates=covariates, target=target) for tic in ticker_series.keys()}
 
-def drop_short_sequences( series_dict, min_length = 12):
+def drop_short_sequences(series_dict, min_length = 15):
     """ 
     
     """
-    new_dict = {}
-    for key, vals in series_dict.items():
-
-        length = vals[0].data_array().shape[0]
-        if length < min_length:
-            continue
-        else:
-            new_dict[key] = vals
-    return new_dict
-
-def split_covariates_target( covariate_series, target, proportion=0.9):
+    return {key : vals for key, vals in series_dict.items() if vals[0].data_array().shape[0] > min_length}
+    
+def slice_series(covariates, target, proportion=0.9):
     """ 
     
     """
     n_split = int( len(target.data_array())*proportion )
+    
     target_train, target_test = target[:n_split], target[n_split:]
-    past_covariates, future_covariates = covariate_series[:n_split], covariate_series[n_split:]
+    past_covariates, future_covariates = covariates[:n_split], covariates[n_split:]
 
     return past_covariates, future_covariates, target_train, target_test
 
-def model_input( series_dict):
+def split_covariates_target(covariates, target, proportion=0.9):
     """ 
     
     """
-    covs_past, covs_future, targets_train, targets_test = [], [], [], []
+    past_covariates, future_covariates = covariates.split_before(proportion)
+    target_train, target_test = target.split_before(proportion)
     
-    for tic in series_dict.keys():
-        cov_p, cov_f, target_tr, target_te = split_covariates_target(series_dict[tic][0], series_dict[tic][1])
-        covs_past.append(cov_p)
-        covs_future.append(cov_f)
-        targets_train.append(target_tr)
-        targets_test.append(target_te)
+    return past_covariates, future_covariates, target_train, target_test
 
+def model_input(series_dict, train_style='slice'):
+    """ 
     
-    return covs_past, covs_future, targets_train, targets_test
+    """
+    assert train_style in ['slice', 'split'], "need to have train_style set to either slice or split"
 
-def get_input_output_chunks( series, t_predict=1):
-    min_length = np.inf
+    if train_style == 'slice':
+        covs_past, covs_future, targets_train, targets_test = zip(*[slice_series(series_dict[tic][0], series_dict[tic][1]) for tic in series_dict.keys()])
+        covs_past = list(covs_past)
+        covs_future = list(covs_future)
+        targets_train = list(targets_train)
+        targets_test = list(targets_test)
+        tickers = list(series_dict.keys())
+    else:
+        covs_past, covs_future, targets_train, targets_test = split_covariates_target(series_dict[tic][0], series_dict[tic][1])
+        tickers = list(series_dict.keys())  
+    
+    return covs_past, covs_future, targets_train, targets_test, tickers
 
-    for serie in series:
-        length = len(serie.data_array())
-        if length < min_length:
-            min_length = length
+def get_input_output_chunks(series_train, series_test):
     
-    input_length = min_length - t_predict
+    min_length_train, min_length_test = np.inf, np.inf
+
+    for train, test in zip(series_train, series_test):
+        length_train = len(train.data_array())
+        length_test = len(test.data_array())
+        
+        if length_train < min_length_train:
+            min_length_train = length_train
+        
+        if length_test < min_length_test:
+            min_length_test = length_test
+        
+    min_length_train = min_length_train - min_length_test
     
-    return input_length, t_predict
+    return min_length_train, min_length_test
+
+def set_test_length(series_test, t_test):
+    return [serie[:t_test] for serie in series_test]
 
 def series_scale( series):
     """ 

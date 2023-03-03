@@ -379,7 +379,7 @@ def drop_low_correlation_features( df):
     """
     cov = df.groupby('ticker').apply(lambda x: x.corrwith(x['Sales_Actual_fiscal'], numeric_only=True)).mean()
     # to ensure we do not drop ticker from dataframe
-    cov['ticker'] = 0
+    cov['ticker'] = 1
     df = df[cov.keys().tolist()]
     df = df.drop(columns=cov[cov < 0.1].index, axis=1)
     
@@ -398,3 +398,12 @@ def min_max_scaler(df):
 
 def get_numeric_cols(df):
     return df[[col for col in df.columns if df[col].dtype in ['int64', 'float64']]]
+
+def map_ticker(df):
+    """ 
+    Map ticker to a number
+    """
+    mapper = {tic: i for i, tic in enumerate(df['ticker'].unique())}
+    inv_mapper = {v: k for k, v in mapper.items()}
+    df['ticker'] = df['ticker'].map(mapper)    
+    return df, mapper, inv_mapper
