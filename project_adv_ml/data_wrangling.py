@@ -46,11 +46,12 @@ def create_df(file_name, folder='exabel_data'):
 
     assert file_name in files_from_folder(), 'File not found in folder'
 
+    # Note - these columns are specific to the files in the exabel_data folder
     col_list_spendings = ['mic', 'ticker', 'time', 'nw_total_sales_a_total','nw_total_sales_b_total']
     col_list_revenue = ['mic', 'ticker', 'time', 'Sales_Actual_fiscal','Sales_Estimate_fiscal']
     
     path = str(path_finder(folder) + '/' + file_name)
-
+    # Note - this is specific to the files in the exabel_data folder    
     df =  pd.read_excel(path_finder(path))
 
     if file_name == 'revenue.xlsx':
@@ -422,9 +423,10 @@ def encode_one_hot(df, col):
 
 def encode_float(df, col):
     """ 
-    Encode the colu
+    Encode the dataframe column to a float
     """
-    mapper = {tic: i for i, tic in zip(np.linspace(0.1,1, df.shape[0]), df.ticker)}
+    unique_vals = df[col].unique()
+    mapper = {val: i for i, val in zip(np.linspace(0.1,1, len(unique_vals)), unique_vals)}
     inv_mapper =  {v: k for k, v in mapper.items()}
     df[col] = df[col].map(mapper)
 

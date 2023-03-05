@@ -2,13 +2,13 @@ from darts import TimeSeries
 import numpy as np
 from darts.dataprocessing.transformers import Scaler
 import pandas as pd
+import random
 
-def set_index(df):
+def set_index(df, freq='Q'):
     """ 
     Sets the index of the df to a pd.date_range with quarterly frequency.
     Uses the time column as start_time and the number of rows as num_periods.
-    This may be faulty if the time column is not in the correct format.
-
+    This assumes frequency of the data is within supported frequencies of pd.date_range.
     Args:
         df (pd.DataFrame): DataFrame with a time column.
     
@@ -21,7 +21,7 @@ def set_index(df):
     num_periods = df.shape[0]
 
     # create pd.date_range with quarterly frequency based on start_time and num_periods
-    df.index = pd.date_range(start=start_time, periods=num_periods, freq='Q')
+    df.index = pd.date_range(start=start_time, periods=num_periods, freq=freq)
     df = df.drop(columns=['time'])
     
     return df
@@ -149,8 +149,50 @@ def match_input_length(past_cov, future_cov, target, tickers, min_train = 10):
     
     combined_length = min_train + len(future_cov[0])
     target = [target[-combined_length:] for target in target]
-    
+
     return past_cov, future_cov, target, tickers
+
+def train_test_split(past_cov, future_cov, target, tickers, test_size=0.2):
+    """
+    Splits the covariates and target into train and test sets.
+    The split is performed by index to account for the fact that the covariates and target have the same indices with respect to the company.
+    It randomly selects n_test elements from each list but at matching indices.
+
+    Args:
+        past_cov (list): list of past covariates
+        future_cov (list): list of future covariates
+        target (list): list of targets
+        test_size (float): proportion of data to be used for testing
+        tickers (list): list of tickers
+    
+    Returns:
+        train_past_cov (list): list of past covariates for training
+        test_past_cov (list): list of past covariates for testing
+        train_future_cov (list): list of future covariates for training
+        test_future_cov (list): list of future covariates for testing
+        train_target (list): list of targets for training
+        test_target (list): list of targets for testing
+        tickers_train (list): list of tickers for training
+        tickers_test (list): list of tickers for testing
+    """
+    n_test = int(len(past_cov) * test_size)
+
+    test_indices = random.sample(range(len(past_cov)), n_test)
+    train_indices = [i for i in range(len(past_cov)) if i not in test_indices]
+    
+    train_past_cov = [past_cov[i] for i in train_indices]
+    test_past_cov = [past_cov[i] for i in test_indices]
+    
+    train_future_cov = [future_cov[i] for i in train_indices]
+    test_future_cov = [future_cov[i] for i in test_indices]
+    
+    train_target = [target[i] for i in train_indices]
+    test_target = [target[i] for i in test_indices]
+    
+    tickers_train = [tickers[i] for i in train_indices]
+    tickers_test = [tickers[i] for i in test_indices]
+
+    return train_past_cov, test_past_cov, train_future_cov, test_future_cov, train_target, test_target, tickers_train, tickers_test
 
 def scale_series(past_cov, future_cov, target):
     """
