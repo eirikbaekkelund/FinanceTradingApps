@@ -3,25 +3,45 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def path_finder( name):
+def path_finder(name):
     """ 
+    Finds the path to a file or folder in the project directory
     
+    Args:
+        name (str): Name of the file or folder.
+    Returns:
+        path (str): Path to the file or folder.
     """
     return os.path.abspath(name)
 
 def files_from_folder(folder='exabel_data'):
     """ 
+    Creates a list of files in a folder.
+
+    Args:
+        folder (str): Name of the folder. Default is 'exabel_data'.
     
+    Returns:
+        files (list): List of files in the folder.
     """
     folder_path = path_finder(folder)
     files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+    
     if '.DS_Store' in files:
         files.remove('.DS_Store')
+    
     return files
 
 def create_df(file_name, folder='exabel_data'):
     """ 
+    Creates a Pandas data frame from a file in a folder.
+
+    Args:
+        file_name (str): Name of the file.
+        folder (str): Name of the folder. Default is 'exabel_data'.
     
+    Returns:
+        df (pd.DataFrame): DataFrame with the data from the file.
     """
 
     assert file_name in files_from_folder(), 'File not found in folder'
@@ -45,7 +65,15 @@ def create_df(file_name, folder='exabel_data'):
 
 def split_column( df, delimiter, column):
     """ 
+    Splits a column in a df based on a delimiter and returns a new df with the split columns.
+    Specifically for csv files with multiple columns in one column.
+
+    Args:
+        df (pd.DataFrame): DataFrame with the data from the file.
+        delimiter (str): Delimiter used to split the column.
     
+    Returns:
+        df (pd.DataFrame): DataFrame with the data from the file.
     """
     split_df = df[column].str.split(delimiter, expand=True)
     split_df.columns = column.split(delimiter)
@@ -53,33 +81,28 @@ def split_column( df, delimiter, column):
     
     return pd.concat([df.drop(column, axis=1), split_df], axis=1)
 
-def remove_time_cols(df):
+def add_time_cols(df):
     """ 
-    
-    """
-    df = df.drop(['year','month','quarter','time'], axis=1)
-    return df
+    Add year, month and quarter columns to a df based on the time column.
 
-def numeric_columns( df):
-    """ 
-    
+    Args:
+        df (pd.DataFrame): DataFrame with the data from the file.
+    Returns:
+        df_copy (pd.DataFrame): DataFrame with the data from the file.
     """
-    
-    for col in df.columns:
-        try:
-            pd.to_numeric(df[col], errors='raise')
-            df[col] = pd.to_numeric(df[col])
-        except ValueError or TypeError:
-            df = df.drop(col, axis=1)
-    
-    return df
+    df_copy = df.copy()
+    df_copy['year'] = df_copy['time'].dt.year
+    df_copy['month'] = df_copy['time'].dt.month
+    df_copy['quarter'] = df_copy['time'].dt.quarter
 
-def encode_index( df, column='mic', encoding = {'XAMS' :  0, 'XLON' : 1, 'XMEX' : 2, 'XNAS' : 3, 'XNYS' : 4, 'XPAR' : 5, 'XTKS' : 6, 'XTSE'  : 7, 'NaN' : 8} ):
+    return df_copy
+
+def encode_index( df, column='mic', mapper = None):
     """  
     
     """
 
-    if encoding is not None:
+    if mapper is not None:
         df[column] = df[column].map(encoding)
     else:
         unique_names = df[column].unique()
@@ -96,15 +119,6 @@ def merge_spendings_revenue( df_spendings, df_revenue):
                 df_revenue[['ticker', 'time', 'Sales_Actual_fiscal', 'Sales_Estimate_fiscal']], 
                 on=['ticker', 'time'], how='left'
                 )
-
-def remove_short_series( df, n=9):
-    """ 
-    
-    """
-    ticker_counts = df['ticker'].value_counts()
-    df = df[df['ticker'].isin(ticker_counts[ticker_counts >= n].index)]
-    
-    return df
 
 def print_nans_companies( df):
     """ 
@@ -275,7 +289,7 @@ def replace_sales( df, tic, company_list, plot, proportion, col_actual='Sales_Ac
             df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
     
 
-    # should try to do Nearest Neighbor related for this scenario
+    # TODO Nearest Neighbor related for this scenario
     if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
         
         window = len(actual_and_estimate) + 2
@@ -297,7 +311,7 @@ def fiscal_sales_imputation(df, plot=False, proportion=0.35,col_actual = 'Sales_
     """ 
     
     """
-    
+    # TODO make more efficient?
     nan_companies = get_nan_columns(df)
 
     for tic, company_list in nan_companies.items():
@@ -325,6 +339,7 @@ def fiscal_sales_imputation(df, plot=False, proportion=0.35,col_actual = 'Sales_
 def impute_singular_nan_column( df, proportion=0.35, max_plots=10):
     assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
 
+    # TODO make more efficient?
     nan_companines = get_nan_columns(df)
     n_plots = 0
     
@@ -338,15 +353,12 @@ def impute_singular_nan_column( df, proportion=0.35, max_plots=10):
                     plot = False
     return df
 
-def create_stationary_covariates( df):
+def remove_short_series(df, n=9):
     """ 
     
     """
-    df['time'] = pd.to_datetime(df['time'])
-    # account for starting year
-    df['year'] = df['time'].dt.year - 2018 
-    df['month'] = df['time'].dt.month
-    df['quarter'] = df['time'].dt.quarter
+    ticker_counts = df['ticker'].value_counts()
+    df = df[df['ticker'].isin(ticker_counts[ticker_counts >= n].index)]
     
     return df
 
@@ -377,33 +389,43 @@ def drop_low_correlation_features( df):
     Drop features with low correlation with Sales_Actual_fiscal
     or nans in the correlation
     """
-    cov = df.groupby('ticker').apply(lambda x: x.corrwith(x['Sales_Actual_fiscal'], numeric_only=True)).mean()
+    corr = df.groupby('ticker').apply(lambda x: x.corrwith(x['Sales_Actual_fiscal'], numeric_only=True)).mean()
     # to ensure we do not drop ticker from dataframe
-    cov['ticker'] = 1
-    df = df[cov.keys().tolist()]
-    df = df.drop(columns=cov[cov < 0.1].index, axis=1)
-    
-    return df
-
-def min_max_scaler(df):
-    for tic in df.ticker.unique():
-        df_copy = df[df.ticker == tic].copy()
-
-        for col in ['nw_total_sales_a_total','nw_total_sales_b_total', 'Sales_Actual_fiscal','Sales_Estimate_fiscal']:
-            df_copy[col] =  (df_copy[col] - np.min(df_copy[col])) / (np.max(df_copy[col]) - np.min(df_copy[col]))
-            df.loc[df.ticker == tic, col] = df_copy[col]
-    df = df.dropna(how='any')
+    corr['ticker'] = 1
+    corr['time'] = 1
+    df = df[corr.keys().tolist()]
+    df = df.drop(columns=corr[abs(corr) < 0.1].index, axis=1)
     
     return df
 
 def get_numeric_cols(df):
     return df[[col for col in df.columns if df[col].dtype in ['int64', 'float64']]]
 
-def map_ticker(df):
+def encode_to_int(df, col):
     """ 
     Map ticker to a number
     """
-    mapper = {tic: i for i, tic in enumerate(df['ticker'].unique())}
+    mapper = {tic: i + 1 for i, tic in enumerate(df[col].unique())}
     inv_mapper = {v: k for k, v in mapper.items()}
-    df['ticker'] = df['ticker'].map(mapper)    
+    df[col] = df[col].map(mapper)    
+
     return df, mapper, inv_mapper
+
+def encode_one_hot(df, col):
+    """ 
+    One hot encode the dataframe categorical column
+    """
+    df = df.copy()
+    df = pd.get_dummies(df, columns=[col])
+    
+    return df
+
+def encode_float(df, col):
+    """ 
+    Encode the colu
+    """
+    mapper = {tic: i for i, tic in zip(np.linspace(0.1,1, df.shape[0]), df.ticker)}
+    inv_mapper =  {v: k for k, v in mapper.items()}
+    df[col] = df[col].map(mapper)
+
+    return df, inv_mapper

@@ -3,8 +3,6 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 
-############# VISUALIZATION TOOLS ################
-
 def plot_scatter_log(df, col1, col2):
     """
     
@@ -40,7 +38,7 @@ def plot_correlation_matrix(df):
     
     """
     f = plt.figure(figsize=(19, 15))
-    plt.matshow(df.corr(), fignum=f.number)
+    plt.matshow(df.corr(numeric_only=True), fignum=f.number, cmap='coolwarm')
     plt.xticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14, rotation=45)
     plt.yticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14)
     cb = plt.colorbar()

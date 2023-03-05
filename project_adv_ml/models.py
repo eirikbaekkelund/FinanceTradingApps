@@ -1,3 +1,19 @@
+from darts.models import NBEATSModel
+from darts.utils.likelihood_models import QuantileRegression
+
+
+class NBEATS(NBEATSModel):
+    def __init__(self, input_chunk_length=10, output_chunk_length=1, n_epochs=100, stack_types=(NBEATSModel.TREND_STACK, NBEATSModel.SEASONALITY_STACK), nb_blocks_per_stack=3, nb_harmonics=None, learning_rate=3e-4, random_state=None):
+        super().__init__(input_chunk_length=input_chunk_length,
+                         output_chunk_length=output_chunk_length,
+                         n_epochs=n_epochs,
+                         stack_types=stack_types,
+                         nb_blocks_per_stack=nb_blocks_per_stack,
+                         nb_harmonics=nb_harmonics,
+                         learning_rate=learning_rate,
+                         random_state=random_state)
+        
+
 epochs = 200
 blocks = 2*input_length # number of blocks in model        
 layer_width = 32        # numer of weights in FC layer
