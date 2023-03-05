@@ -13,22 +13,8 @@ class SeasonalNBEATS(NBEATSModel):
                          learning_rate=learning_rate,
                          random_state=random_state)
         
-
-
-model = NBEATSModel(input_chunk_length=input_length, 
-                     output_chunk_length=output_length,
-                     num_stacks=blocks,
-                     layer_widths=layer_width,
-                     n_epochs=epochs,
-                     likelihood = QuantileRegression(quantiles),
-                     optimizer_kwargs = {"lr" : 1e-3},
-                     generic_architecture=True,
-                     trend_polynomial_degree=2,
-                     random_state=seed,
-                     nr_epochs_val_period=val_wait,
-                     #pl_trainer_kwargs = {"accelerator": "cpu", "devices": 8 } 
-                     )
-predictor_nbeats = model_nbeats.fit(series=series_train, 
-                       past_covariates=past_covariates,               
-                       verbose=False,
-                       epochs=epochs)
+    def fit(self, target, past_covs, mc_dropout=True):
+        return self.fit(series=target,
+                        past_covariates=past_covs,
+                        n_jobs=-1,
+                        mc_dropout=mc_dropout)

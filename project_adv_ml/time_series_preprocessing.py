@@ -152,7 +152,7 @@ def match_input_length(past_cov, future_cov, target, tickers, min_train = 10):
 
     return past_cov, future_cov, target, tickers
 
-def train_test_split(past_cov, future_cov, target, tickers, test_size=0.2):
+def train_test_split(past_cov, future_cov, target, tickers, scaler_cov, scaler_target, test_size=0.2):
     """
     Splits the covariates and target into train and test sets.
     The split is performed by index to account for the fact that the covariates and target have the same indices with respect to the company.
@@ -164,6 +164,9 @@ def train_test_split(past_cov, future_cov, target, tickers, test_size=0.2):
         target (list): list of targets
         test_size (float): proportion of data to be used for testing
         tickers (list): list of tickers
+        scaler_cov (list of darts.preprocessing.StandardScaler): list of scalers for the covariates
+        scaler_target (list of darts.preprocessing.StandardScaler): list of scalers for the target
+        test_size (float): proportion of data to be used for testing
     
     Returns:
         train_past_cov (list): list of past covariates for training
@@ -192,7 +195,13 @@ def train_test_split(past_cov, future_cov, target, tickers, test_size=0.2):
     tickers_train = [tickers[i] for i in train_indices]
     tickers_test = [tickers[i] for i in test_indices]
 
-    return train_past_cov, test_past_cov, train_future_cov, test_future_cov, train_target, test_target, tickers_train, tickers_test
+    scaler_cov_train = [scaler_cov[i] for i in train_indices]
+    scaler_cov_test = [scaler_cov[i] for i in test_indices]
+
+    scaler_target_train = [scaler_target[i] for i in train_indices]
+    scaler_target_test = [scaler_target[i] for i in test_indices]
+
+    return train_past_cov, test_past_cov, train_future_cov, test_future_cov, train_target, test_target, tickers_train, tickers_test, scaler_cov_train, scaler_cov_test, scaler_target_train, scaler_target_test
 
 def scale_series(past_cov, future_cov, target):
     """
@@ -224,3 +233,19 @@ def scale_series(past_cov, future_cov, target):
     target = [scaler.transform(x) for x, scaler in zip(target, scaler_target)]
 
     return past_cov, future_cov, target, scaler_cov, scaler_target
+
+def remove_n_predictions(test_target, test_future_cov):
+    """
+    Removes points that we try to predict from the target.
+
+    Args:
+        test_target (list): list of targets for testing.
+        test_future_cov (list): list of future covariates for testing.
+    
+    Returns:
+        test_target (list): list of targets for testing with the last n points removed.
+    """
+    n_remove = len(test_future_cov[0])
+    test_target = [target[:-n_remove] for target in test_target]
+
+    return test_target
