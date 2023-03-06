@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+# WILL REPLACE data_wrangler.py to make it more general and effective
+
 def path_finder(name):
     """ 
     Finds the path to a file or folder in the project directory
@@ -121,225 +123,107 @@ def merge_spendings_revenue( df_spendings, df_revenue):
                 on=['ticker', 'time'], how='left'
                 )
 
-# ORIGINAL
-def print_nans_companies( df):
-    """ 
 
+def print_nans_companies(df):
     """
-    for tic in np.unique(df.ticker):
-        df_copy = df[df['ticker'] == tic]
-        
-        if df_copy.isnull().values.any():
-            print('\n')
-            print(f"Ticker: {tic}, # Data points: {df_copy.shape[0]}")
-        df_copy = df_copy.reset_index(drop=False)
-        
-        for col in df_copy.columns:
-            nan_count = df_copy[col].isnull().sum()
+    Print the NaN indices for each column in the DataFrame grouped by ticker.
+
+    Args:
+        df (pandas.DataFrame): DataFrame to search for NaN values.
+
+    Returns:
+        None.
+    """
+    tickers = df['ticker'].unique()
+    for ticker in tickers:
+        ticker_df = df.loc[df['ticker'] == ticker]
+        if ticker_df.isnull().values.any():
+            print(f"\nTicker: {ticker}, # Data points: {ticker_df.shape[0]}")
+        ticker_df = ticker_df.reset_index(drop=True)
+        for col in ticker_df.columns:
+            nan_count = ticker_df[col].isnull().sum()
             if nan_count > 0:
-                nan_indices = df_copy[df_copy[col].isnull()].index.tolist()
+                nan_indices = ticker_df[ticker_df[col].isnull()].index.tolist()
                 print(f"Column: {col}, NaN Indices: {nan_indices}")
 
-# ORIGINAL
-def get_nan_columns( df):
-    """ 
-    
-    """
-    nans_dict = {}
-    # TODO make more efficient?
-    for tic in np.unique(df.ticker):
-        
-        df_copy = df[df['ticker'] == tic]
-        df_copy = df_copy.reset_index(drop=False)
-        nans_dict[tic] = []
-        
-        for col in df_copy.columns:
-            nan_count = df_copy[col].isnull().sum()
-            if nan_count > 0:
-                nans_dict[tic].append(col)
-    
-    return nans_dict
 
-def remove_missing_ground_truth( df, tresh_proportion=0.4):
-    """ 
-    
+def remove_missing_ground_truth(df, thresh_proportion=0.4):
     """
-    nan_companies = get_nan_columns(df)
-    # TODO make more efficient?
-    
-    for tic in nan_companies.keys():
-    
-        if 'Sales_Actual_fiscal' in nan_companies[tic] and 'Sales_Actual_fiscal' in nan_companies[tic]:
-    
-            df_copy = df[df['ticker'] == tic]
-    
-            proportion_actual = df_copy[df_copy['Sales_Actual_fiscal'].isna()].shape[0] / df_copy.shape[0]
-    
-            proportion_estimate = df_copy[df_copy['Sales_Estimate_fiscal'].isna()].shape[0] / df_copy.shape[0]
-            if proportion_actual >= tresh_proportion and proportion_estimate >= tresh_proportion:
+    Remove companies from the DataFrame that have a proportion of missing values for
+    'Sales_Actual_fiscal' and 'Sales_Estimate_fiscal' above the threshold.
 
-                df = df[df['ticker'] != tic]
-    
+    Args:
+        df (pandas.DataFrame): DataFrame to search for companies to remove.
+        thresh_proportion (float, optional): Threshold proportion of missing values.
+            Defaults to 0.4.
+
+    Returns:
+        pandas.DataFrame: Updated DataFrame with the specified companies removed.
+    """
+    actual_col = 'Sales_Actual_fiscal'
+    estimate_col = 'Sales_Estimate_fiscal'
+
+    # Get DataFrame of rows with NaN values in actual and estimate columns
+    nan_df = df.loc[df[actual_col].isna() & df[estimate_col].isna()]
+
+    # Calculate the proportion of missing values for each ticker
+    nan_count = nan_df.groupby('ticker').size()
+    ticker_count = df.groupby('ticker').size()
+    proportion = nan_count / ticker_count
+
+    # Remove tickers with proportion of missing values above the threshold
+    remove_tickers = proportion[proportion >= thresh_proportion].index
+    df = df.loc[~df['ticker'].isin(remove_tickers)]
+
     return df
 
-def linear_least_squares( df, plot, col='nw_total_sales_b_total'):
-    """ 
+def least_square_imputation(df, tic, col='nw_total_sales_b_total', plot=False):
+    """
     
     """
-    df_copy = df.copy()
-    # dropping stationary / mutual information / non-numeric columns
-    df_copy = df_copy.drop(['month', 'ticker', 'mic', 'time'], axis=1)
+    df_copy = df[df['ticker'] == tic].copy()
+    nan_indices = df_copy[df_copy[col].isnull()].index
+    value_indices = df_copy[~df_copy[col].isnull()].index
     
-    nan_rows = df_copy[df_copy[col].isna()]
-    value_rows = df_copy[~df_copy[col].isna()]
-    
-    X, y = value_rows.drop(col, axis=1), value_rows[col]
-    
-    X['bias'] = np.ones(X.shape[0])
+    X, y = df_copy.drop([col, 'month', 'ticker', 'mic', 'time'], axis=1).iloc[value_indices], df_copy[col].iloc[value_indices]
+    X['bias'] = 1
     
     weights = np.linalg.lstsq(X, y, rcond=None)[0]
     
-    nan_rows = nan_rows.drop(col, axis=1)
-    nan_rows['bias'] = np.ones(nan_rows.shape[0])
+    nan_rows = df_copy.drop(col, axis=1).iloc[nan_indices]
+    nan_rows['bias'] = 1
     
     new_vals = nan_rows @ weights
     
-    df.loc[nan_rows.index, col] = new_vals
+    df.loc[nan_indices, col] = new_vals.values
     
     if plot:
-        plt.scatter(nan_rows.index, new_vals, label='Imputed Values', marker='x', color='red', alpha=.8)
-        plt.scatter(y.index, y, label='Actual Values', marker='o', color='blue', alpha=.8)
+        plt.scatter(nan_indices, new_vals, label='Imputed Values', marker='x', color='red', alpha=.8)
+        plt.scatter(value_indices, y, label='Actual Values', marker='o', color='blue', alpha=.8)
         plt.plot(df.index, df[col], label='Concatenated', color='black', linestyle='--', alpha=0.5)
-        plt.title(f"Company: {df['ticker'].unique()[0]}, column: {col}")
+        plt.title(f"Company: {tic}, column: {col}")
         plt.legend()
         plt.show()
-        
-    return df
-
-
-def get_nan_indices( df, ticker, col):
-    """
-    
-    """
-    df_copy = df[df['ticker'] == ticker]
-    original_index = df_copy.index
-    df_copy = df_copy.reset_index(drop=False)
-    nan_indices = df_copy[df_copy[col].isnull()].index.tolist()
-
-    return df_copy, original_index, nan_indices
-
-def least_square_imputation( df, df_copy, tic, original_index, plot=False, col='nw_total_sales_b_total'):
-    """
-    
-    """
-    df_copy = linear_least_squares(df_copy, plot=plot, col=col)
-    df_copy = df_copy.set_index(original_index)
-    df.loc[df['ticker'] == tic,col] = df_copy[col]
-
-    return df
-    
-    
-def impute_nans_singular_column( df, col='nw_total_sales_b_total',plot=False, max_plots=10):
-    """ 
-    
-    """
-    
-    assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
-
-    n_plots = 0
-    nan_companies = get_nan_columns(df)
-
-    # TODO make more efficient?
-    for tic in nan_companies.keys():
-
-        if set(nan_companies[tic]) == set([col]):
-            df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=col)
-            
-            if set(nan_indices) == set([0,1,2]) or set(nan_indices) == set([0,1,2,3]) or set(nan_indices) == set([0,1]) or set(nan_indices) == set([0]) or len(nan_indices) <= 5:
-                df = least_square_imputation(df, df_copy, tic, original_indices, plot=plot)
-                n_plots += 1
-                if n_plots == max_plots:
-                    plot = False
     
     return df
 
 
-def replace_sales( df, tic, company_list, plot, proportion, col_actual='Sales_Actual_fiscal', col_estimate = 'Sales_Estimate_fiscal'):
-    """ 
-    
+def get_nan_indices(df, ticker, col):
+    df_copy = df.loc[df['ticker'] == ticker, col]
+    nan_indices = df_copy[df_copy.isnull()].index
+    return df_copy.index, nan_indices
+
+def get_nan_columns(df):
     """
-    def get_index_sets(df_idx, ticker, col_act, col_est):
-        """ 
-        
-        """
-        _, _, nan_indice_actual = get_nan_indices(df_idx, ticker, col=col_act)
-        _, _, nan_indices_estimate = get_nan_indices(df_idx, ticker, col=col_est)
-        actual_set, estimate_set = set(nan_indice_actual), set(nan_indices_estimate)
-        
-        return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
-    
-    actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_sets(df, tic, col_actual, col_estimate)
-    
-    # replace NaNs with normals when one column has values and the other doesn't
-    
-    if len(actual_not_estimate) != 0 or len(estimate_not_actual) != 0:
-        mean_abs_diff = np.mean(abs(df[col_actual] - df[col_estimate]))
-        std_dev = np.sqrt(mean_abs_diff)
-
-        for col in [col_estimate, col_actual]:
-            mask = df[col].isna()
-            other_col = col_estimate if col == col_actual else col_actual
-            df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
-    
-
-    # TODO Nearest Neighbor related for this scenario
-    if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
-        
-        window = len(actual_and_estimate) + 2
-        rolling_mean_actual = df[col_actual].rolling(window, min_periods=1).mean()
-        rolling_mean_estimate = df[col_estimate].rolling(window, min_periods=1).mean()
-            
-        if 0 in actual_and_estimate or 1 in actual_and_estimate:    
-            df[col_estimate] = df[col_estimate].fillna(rolling_mean_actual).bfill()
-        else:
-            df[col_estimate] = df[col_estimate].fillna(rolling_mean_estimate).ffill()
-        
-        df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=col_actual)
-        if len(original_indices) / len(nan_indices) < proportion:
-            df = least_square_imputation(df, df_copy, tic, original_indices, plot=plot, col=col_actual)
-    
-    return df
-
-def fiscal_sales_imputation(df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
-    """ 
-    
+    Returns a dictionary of columns with NaN values for each ticker in the DataFrame.
     """
-    # TODO make more efficient?
-    nan_companies = get_nan_columns(df)
+    nans_dict = {}
+    groups = df.groupby('ticker')
+    for tic, group in groups:
+        nans_dict[tic] = group.columns[group.isnull().any()].tolist()
+    return nans_dict
 
-    for tic, company_list in nan_companies.items():
-        
-        if col_actual in company_list or col_estimate in company_list:
-            df.loc[df['ticker'] == tic, :] = replace_sales(df, tic, company_list, plot=plot, proportion=proportion)
-            df_copy = df[df['ticker'] == tic]
-            
-            if df_copy[col_estimate].isna().sum() == 0:
-                
-                if set(nan_companies[tic]) == set([col_actual, n_sales_a]):
-                    df_less_nans = df_copy.drop(col_actual, axis=1)
-                    _, original_indices, nan_indices = get_nan_indices(df, tic, col=n_sales_a)
-                    df = least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_a)
-                
-                elif set(nan_companies[tic]) == set([col_actual, n_sales_b]):
-                    df_less_nans = df_copy.drop(col_actual, axis=1)
-                    _, original_indices, nan_indices = get_nan_indices(df, tic, col=n_sales_b)
-                    
-                    if len(original_indices) /len(nan_indices) <= proportion:
-                        df = least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_b)
-    
-    return df
-
-def impute_singular_nan_column( df, proportion=0.35, max_plots=10):
+def impute_nans_singular_column( df, proportion=0.35, max_plots=10):
     assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
 
     # TODO make more efficient?
@@ -355,6 +239,81 @@ def impute_singular_nan_column( df, proportion=0.35, max_plots=10):
                 if n_plots == max_plots:
                     plot = False
     return df
+
+def replace_sales(df, tic, company_list, plot, proportion, col_actual='Sales_Actual_fiscal', col_estimate='Sales_Estimate_fiscal'):
+    """
+    """
+    def get_index_sets(df_idx, ticker, col_act, col_est):
+        """
+        """
+        _, _, nan_indice_actual = get_nan_indices(df_idx, ticker, col=col_act)
+        _, _, nan_indices_estimate = get_nan_indices(df_idx, ticker, col=col_est)
+        actual_set, estimate_set = set(nan_indice_actual), set(nan_indices_estimate)
+
+        return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
+
+    actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_sets(df, tic, col_actual, col_estimate)
+
+    # replace NaNs with normals when one column has values and the other doesn't
+    if len(actual_not_estimate) != 0 or len(estimate_not_actual) != 0:
+        mean_abs_diff = np.mean(abs(df[col_actual] - df[col_estimate]))
+        std_dev = np.sqrt(mean_abs_diff)
+
+        for col in [col_estimate, col_actual]:
+            mask = df[col].isna()
+            other_col = col_estimate if col == col_actual else col_actual
+            df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
+
+    # TODO Nearest Neighbor related for this scenario?
+    if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
+
+        df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=col_actual)
+        if len(original_indices) / len(nan_indices) < proportion:
+            df = least_square_imputation(df, df_copy, tic, original_indices, plot=plot, col=col_actual)
+        else:
+            rolling_mean_actual = df[col_actual].rolling(len(actual_and_estimate) + 2, min_periods=1).mean()
+            mask_estimate = df[col_estimate].isna() & df[col_actual].notna()
+            df.loc[mask_estimate, col_estimate] = rolling_mean_actual[mask_estimate].bfill()
+
+    return df
+
+def get_nan_columns(df):
+    nans_dict = {}
+    for tic in np.unique(df.ticker):
+        tic_df = df[df.ticker == tic]
+        nan_cols = list(tic_df.columns[tic_df.isna().any()])
+        if nan_cols:
+            nans_dict[tic] = nan_cols
+    return nans_dict
+
+def fiscal_sales_imputation(df, plot=False, proportion=0.35, 
+                            col_actual='Sales_Actual_fiscal', 
+                            col_estimate='Sales_Estimate_fiscal', 
+                            n_sales_a='nw_total_sales_a_total', 
+                            n_sales_b='nw_total_sales_b_total'):
+    
+    nan_companies = get_nan_columns(df)
+    df_copy = df.copy()
+
+    for tic, company_list in nan_companies.items():
+        if col_actual in company_list or col_estimate in company_list:
+            df_copy.loc[df_copy['ticker'] == tic, :] = replace_sales(df_copy, tic, company_list, plot=plot, proportion=proportion)
+
+            if df_copy.loc[df_copy['ticker'] == tic, col_estimate].isna().sum() == 0:
+                df_tic = df_copy.loc[df_copy['ticker'] == tic, :]
+                
+                if set(nan_companies[tic]) == set([col_actual, n_sales_a]):
+                    df_tic_less_nans = df_tic.drop(col_actual, axis=1)
+                    _, original_indices, nan_indices = get_nan_indices(df_tic, tic, col=n_sales_a)
+                    df_copy.loc[df_copy['ticker'] == tic, n_sales_a] = least_square_imputation(df_tic, df_tic_less_nans, tic, original_indices, plot=plot, col=n_sales_a)
+                
+                elif set(nan_companies[tic]) == set([col_actual, n_sales_b]):
+                    df_tic_less_nans = df_tic.drop(col_actual, axis=1)
+                    _, original_indices, nan_indices = get_nan_indices(df_tic, tic, col=n_sales_b)
+                    if len(original_indices) / len(nan_indices) <= proportion:
+                        df_copy.loc[df_copy['ticker'] == tic, n_sales_b] = least_square_imputation(df_tic, df_tic_less_nans, tic, original_indices, plot=plot, col=n_sales_b)
+
+    return df_copy
 
 def remove_short_series(df, n=9):
     """ 
@@ -378,7 +337,6 @@ def add_proportion_ab( df):
     df['proportion_ab'] = df['Sales_Actual_fiscal'] / ( df['nw_total_sales_a_total'] +  df['nw_total_sales_b_total'] )
     
     return df
-
 
 def add_quarterly_yoy( df):
     df['quarterly_yoy'] = df.groupby(['ticker'])['Sales_Actual_fiscal'].pct_change(periods=4)
@@ -433,3 +391,5 @@ def encode_float(df, col):
     df[col] = df[col].map(mapper)
 
     return df, inv_mapper
+
+
