@@ -112,14 +112,12 @@ def encode_index( df, column='mic', mapper = None):
     
     return df
 
-def merge_spendings_revenue( df_spendings, df_revenue):
+def merge_dataframes(df_left, df_right, on=['ticker', 'time'], how='left', cols_right=['ticker', 'time', 'Sales_Actual_fiscal', 'Sales_Estimate_fiscal']):
     """ 
     
     """
-    return df_spendings.merge(
-                df_revenue[['ticker', 'time', 'Sales_Actual_fiscal', 'Sales_Estimate_fiscal']], 
-                on=['ticker', 'time'], how='left'
-                )
+
+    return df_left.merge(df_right[cols_right], on=on, how=how)
 
 # ORIGINAL
 def print_nans_companies( df):
@@ -140,54 +138,51 @@ def print_nans_companies( df):
                 nan_indices = df_copy[df_copy[col].isnull()].index.tolist()
                 print(f"Column: {col}, NaN Indices: {nan_indices}")
 
-# ORIGINAL
-def get_nan_columns( df):
-    """ 
-    
+def get_nan_columns(df):
     """
-    nans_dict = {}
-    # TODO make more efficient?
-    for tic in np.unique(df.ticker):
-        
-        df_copy = df[df['ticker'] == tic]
-        df_copy = df_copy.reset_index(drop=False)
-        nans_dict[tic] = []
-        
-        for col in df_copy.columns:
-            nan_count = df_copy[col].isnull().sum()
-            if nan_count > 0:
-                nans_dict[tic].append(col)
-    
-    return nans_dict
+    Return a dictionary of columns with NaN values grouped by ticker.
 
-def remove_missing_ground_truth( df, tresh_proportion=0.4):
-    """ 
-    
+    Args:
+        df (pandas.DataFrame): DataFrame to search for NaN values.
+
+    Returns:
+        A dictionary with tickers as keys and lists of columns with NaN values as values.
+    """
+    nan_dict = {}
+    nan_groups = df.groupby('ticker').apply(lambda x: x.isnull().any())
+    for ticker, nan_cols in nan_groups.items():
+        if nan_cols.any():
+            nan_dict[ticker] = [col for col in nan_cols.index if nan_cols[col]]
+    return nan_dict
+
+def remove_missing_ground_truth(df, thresh_proportion=0.4):
+    """
+    Remove rows for companies with a high proportion of missing ground truth data.
+
+    Args:
+        df (pandas.DataFrame): DataFrame to search for missing ground truth data.
+        thresh_proportion (float, optional): Proportion of missing ground truth data required to remove a company. Defaults to 0.4.
+
+    Returns:
+        A new DataFrame with rows removed for companies with a high proportion of missing ground truth data.
     """
     nan_companies = get_nan_columns(df)
-    # TODO make more efficient?
-    
-    for tic in nan_companies.keys():
-    
-        if 'Sales_Actual_fiscal' in nan_companies[tic] and 'Sales_Actual_fiscal' in nan_companies[tic]:
-    
-            df_copy = df[df['ticker'] == tic]
-    
-            proportion_actual = df_copy[df_copy['Sales_Actual_fiscal'].isna()].shape[0] / df_copy.shape[0]
-    
-            proportion_estimate = df_copy[df_copy['Sales_Estimate_fiscal'].isna()].shape[0] / df_copy.shape[0]
-            if proportion_actual >= tresh_proportion and proportion_estimate >= tresh_proportion:
-
+    for tic, nan_cols in nan_companies.items():
+        if 'Sales_Actual_fiscal' in nan_cols and 'Sales_Estimate_fiscal' in nan_cols:
+            tic_df = df[df['ticker'] == tic]
+            prop_actual = tic_df['Sales_Actual_fiscal'].isna().mean()
+            prop_estimate = tic_df['Sales_Estimate_fiscal'].isna().mean()
+            if prop_actual >= thresh_proportion and prop_estimate >= thresh_proportion:
                 df = df[df['ticker'] != tic]
-    
     return df
 
-def linear_least_squares( df, plot, col='nw_total_sales_b_total'):
+def linear_least_squares( df, plot=False, col='nw_total_sales_b_total'):
     """ 
     
     """
     df_copy = df.copy()
     # dropping stationary / mutual information / non-numeric columns
+    # this is very manual and could be improved
     df_copy = df_copy.drop(['month', 'ticker', 'mic', 'time'], axis=1)
     
     nan_rows = df_copy[df_copy[col].isna()]

@@ -123,7 +123,6 @@ def merge_spendings_revenue( df_spendings, df_revenue):
                 on=['ticker', 'time'], how='left'
                 )
 
-
 def print_nans_companies(df):
     """
     Print the NaN indices for each column in the DataFrame grouped by ticker.
@@ -134,17 +133,23 @@ def print_nans_companies(df):
     Returns:
         None.
     """
-    tickers = df['ticker'].unique()
-    for ticker in tickers:
-        ticker_df = df.loc[df['ticker'] == ticker]
-        if ticker_df.isnull().values.any():
-            print(f"\nTicker: {ticker}, # Data points: {ticker_df.shape[0]}")
-        ticker_df = ticker_df.reset_index(drop=True)
-        for col in ticker_df.columns:
-            nan_count = ticker_df[col].isnull().sum()
-            if nan_count > 0:
-                nan_indices = ticker_df[ticker_df[col].isnull()].index.tolist()
-                print(f"Column: {col}, NaN Indices: {nan_indices}")
+    nan_df = df.isnull()
+    nan_cols = nan_df.any()
+    if not nan_cols.any():
+        print('No NaN values found')
+        return
+
+    nan_groups = df.groupby('ticker')[nan_cols.index[nan_cols]].apply(lambda x: x.isnull().stack().reset_index().rename(columns={'level_1': 'column', 0: 'is_nan'}))
+    if nan_groups.empty:
+        print('No NaN values found')
+        return
+
+    for ticker, nan_group in nan_groups.groupby('ticker'):
+        print(f"\nTicker: {ticker}, # Data points: {nan_group.shape[0]}")
+        for col, col_nan_group in nan_group.groupby('column'):
+            nan_indices = col_nan_group['level_0'].tolist()
+            print(f"Column: {col}, NaN Indices: {nan_indices}")
+
 
 
 def remove_missing_ground_truth(df, thresh_proportion=0.4):
@@ -155,7 +160,7 @@ def remove_missing_ground_truth(df, thresh_proportion=0.4):
     Args:
         df (pandas.DataFrame): DataFrame to search for companies to remove.
         thresh_proportion (float, optional): Threshold proportion of missing values.
-            Defaults to 0.4.
+        Defaults to 0.4.
 
     Returns:
         pandas.DataFrame: Updated DataFrame with the specified companies removed.

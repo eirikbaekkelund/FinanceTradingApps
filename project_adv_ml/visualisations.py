@@ -101,3 +101,31 @@ def plot_anamoly_detection(df, plot=False, max_plots=10):
             n_plots += 1
         if n_plots == max_plots and plot:
             break
+
+def plot_predictions(predictions, targets, scalers, tickers):
+    n_plots = min(len(predictions), 25)
+    n_rows = int(np.ceil(n_plots / 5))
+    n_cols = int(np.ceil(n_plots / n_rows))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_rows* 5,n_cols* 5))
+    # set suptitle
+    axes = axes.flatten()
+    for i in range(n_rows):
+        for j in range(n_cols):
+            k = i * n_rows + j
+            if k >= n_plots:
+                break
+            pred = scalers[k].inverse_transform(predictions[k]).data_array().squeeze()
+            target = scalers[k].inverse_transform(targets[k]).data_array().squeeze()
+            axes[k].plot(pred.time, pred, label='prediction', marker = 'o', color = 'red')
+            # TODO fix quantiles for predictions
+            axes[k].fill_between(pred.time, pred - pred.std(), pred + pred.std(), alpha=0.2, color='red')
+            axes[k].plot(target.time, target, label='target', marker = 'x', color = 'blue')
+            
+            if k == 0:
+                axes[k].legend()
+            axes[k].set_ylim([target.min() - 100, 1.1 * target.max()])
+            # rotate x axis labels, and include only 3 ticks on the x axis
+            axes[k].tick_params(axis='x', labelrotation=30, labelsize=8)
+            axes[k].tick_params(axis='y', labelrotation=30, labelsize=8)
+            axes[k].set_title(f"{tickers[k]}", fontweight='bold')
+    plt.show()
