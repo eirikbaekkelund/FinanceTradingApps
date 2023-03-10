@@ -1,4 +1,3 @@
-from scipy.optimize import minimize
 from darts.models import NBEATSModel
 from darts.metrics import rmse
 from darts.utils.likelihood_models import QuantileRegression
