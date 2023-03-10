@@ -52,7 +52,7 @@ class HyperparameterOptimizationNBEATS:
             float: validation loss
         """
         n_stacks, n_blocks, layer_width, epochs, val_wait = map(int, params)
-        quantiles = [0.1, 0.5, 0.9]
+        quantiles = [0.01, 0.1, 0.2, 0.5, 0.8, 0.9, 0.99]
         model = NBEATSModel(input_chunk_length=self.input_length, 
                             output_chunk_length=self.output_length,
                             num_stacks=n_stacks,
@@ -74,7 +74,7 @@ class HyperparameterOptimizationNBEATS:
                                 series=test_target,
                                 past_covariates=test_past_cov)
         
-        return np.mean([rmse(target[-2:], pred) for target, pred in zip(test_target, preds_val)])
+        return np.mean([rmse(target[-self.output_length:], pred) for target, pred in zip(test_target, preds_val)])
     
     
     def optimize(self, n_calls=50):
@@ -89,6 +89,7 @@ class HyperparameterOptimizationNBEATS:
         """
         # Wrap objective function to use named arguments
         @use_named_args(self.space)
+        
         def objective(num_stacks, num_blocks, layer_width, n_epochs, nr_epochs_val_period):
             """
             Objective function for hyperparameter tuning
