@@ -1,34 +1,10 @@
-from darts.models import NBEATSModel, XGBModel, LinearRegressionModel, BlockRNNModel
+from darts.models import NBEATSModel
 from darts.metrics import rmse
 from darts.utils.likelihood_models import QuantileRegression
 import numpy as np
 from skopt import gp_minimize
 from skopt.space import Integer
 from skopt.utils import use_named_args
-from darts.timeseries import TimeSeries
-
-class SeasonalNBEATS(NBEATSModel):
-    def __init__(self, input_chunk_length=10, output_chunk_length=1, n_epochs=100, stack_types=(NBEATSModel.TREND_STACK, NBEATSModel.SEASONALITY_STACK), nb_blocks_per_stack=3, nb_harmonics=None, learning_rate=3e-4, random_state=None):
-        super().__init__(input_chunk_length=input_chunk_length,
-                         output_chunk_length=output_chunk_length,
-                         n_epochs=n_epochs,
-                         stack_types=stack_types,
-                         nb_blocks_per_stack=nb_blocks_per_stack,
-                         nb_harmonics=nb_harmonics,
-                         learning_rate=learning_rate,
-                         random_state=random_state)
-
-
-class TraditionalNBeats(NBEATSModel):
-    def __init__(self, input_chunk_length=10, output_chunk_length=1, n_epochs=100, nb_blocks_per_stack=3, nb_harmonics=None, learning_rate=3e-4, random_state=None):
-        super().__init__(input_chunk_length=input_chunk_length,
-                         output_chunk_length=output_chunk_length,
-                         n_epochs=n_epochs,
-                         nb_blocks_per_stack=nb_blocks_per_stack,
-                         nb_harmonics=nb_harmonics,
-                         learning_rate=learning_rate,
-                         random_state=random_state)
-    
 
 class HyperparameterOptimizationNBEATS:
     """
@@ -44,22 +20,16 @@ class HyperparameterOptimizationNBEATS:
         val_past_cov (TimeSeries): Validation past covariates
         seed (int, optional): Random seed. Defaults to 42.
     """
-    def __init__(self, model, input_length, output_length, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
-        assert isinstance(model, NBEATSModel), "model must be of type NBEATSModel"
+    def __init__(self, input_length, output_length, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
         assert isinstance(input_length, int), "input_length must be of type int"
         assert isinstance(output_length, int), "output_length must be of type int"
-        assert isinstance(train_target, TimeSeries), "train_target must be of type TimeSeries"
-        assert isinstance(train_past_cov, TimeSeries), "train_past_cov must be of type TimeSeries"
-        assert isinstance(val_input, TimeSeries), "val_target_input must be of type TimeSeries"
-        assert isinstance(val_past_cov, TimeSeries), "val_past_cov must be of type TimeSeries"
         assert isinstance(seed, int), "seed must be of type int"
 
-        self.model = model
         self.input_length = input_length
         self.output_length = output_length
         self.train_target = train_target
         self.train_past_cov = train_past_cov
-        self.val_target_ = val_target
+        self.val_target = val_target
         self.val_input = val_input
         self.val_past_cov = val_past_cov
         self.seed = seed
@@ -70,7 +40,7 @@ class HyperparameterOptimizationNBEATS:
             Integer(50, 100, name='n_epochs'),
             Integer(1, 3, name='nr_epochs_val_period')]
 
-    @staticmethod
+    # insert static method if 'self' is not used
     def objective_nbeats(self, params):
         """ 
         Optimization function for hyperparameter tuning
