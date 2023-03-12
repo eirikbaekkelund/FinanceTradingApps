@@ -393,6 +393,8 @@ def drop_low_correlation_features( df):
     corr['time'] = 1
     df = df[corr.keys().tolist()]
     df = df.drop(columns=corr[abs(corr) < 0.1].index, axis=1)
+    # manually drop mic 
+    df = df.drop(columns=['mic'], axis=1)
     
     return df
 

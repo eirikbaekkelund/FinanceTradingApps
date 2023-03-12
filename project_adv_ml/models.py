@@ -20,12 +20,10 @@ class HyperparameterOptimizationNBEATS:
         val_past_cov (TimeSeries): Validation past covariates
         seed (int, optional): Random seed. Defaults to 42.
     """
-    def __init__(self, input_length, output_length, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
-        assert isinstance(input_length, int), "input_length must be of type int"
+    def __init__(self, max_input_length, output_length, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
         assert isinstance(output_length, int), "output_length must be of type int"
         assert isinstance(seed, int), "seed must be of type int"
 
-        self.input_length = input_length
         self.output_length = output_length
         self.train_target = train_target
         self.train_past_cov = train_past_cov
@@ -38,9 +36,9 @@ class HyperparameterOptimizationNBEATS:
             Integer(4, 10, name='num_blocks'),
             Integer(64, 256, name='layer_width'),
             Integer(50, 100, name='n_epochs'),
-            Integer(1, 3, name='nr_epochs_val_period')]
+            Integer(1, 3, name='nr_epochs_val_period'),
+            Integer(4, int(max_input_length), name='input_length'),]
 
-    # insert static method if 'self' is not used
     def objective_nbeats(self, params):
         """ 
         Optimization function for hyperparameter tuning
@@ -55,9 +53,9 @@ class HyperparameterOptimizationNBEATS:
         Returns:
             float: validation loss
         """
-        n_stacks, n_blocks, layer_width, epochs, val_wait = map(int, params)
+        n_stacks, n_blocks, layer_width, epochs, val_wait, input_length = map(int, params)
         quantiles = [0.01, 0.1, 0.2, 0.5, 0.8, 0.9, 0.99]
-        model = NBEATSModel(input_chunk_length=self.input_length, 
+        model = NBEATSModel(input_chunk_length=input_length, 
                             output_chunk_length=self.output_length,
                             num_stacks=n_stacks,
                             num_blocks=n_blocks,
@@ -94,7 +92,7 @@ class HyperparameterOptimizationNBEATS:
         # Wrap objective function to use named arguments
         @use_named_args(self.space)
         
-        def objective(num_stacks, num_blocks, layer_width, n_epochs, nr_epochs_val_period):
+        def objective(num_stacks, num_blocks, layer_width, n_epochs, nr_epochs_val_period, input_length):
             """
             Objective function for hyperparameter tuning
 
@@ -108,7 +106,7 @@ class HyperparameterOptimizationNBEATS:
             Returns:
                 float: validation loss
             """
-            params = (num_stacks, num_blocks, layer_width, n_epochs, nr_epochs_val_period)
+            params = (num_stacks, num_blocks, layer_width, n_epochs, nr_epochs_val_period, input_length)
             return self.objective_nbeats(params)
         
         result = gp_minimize(objective, self.space, n_calls=n_calls)

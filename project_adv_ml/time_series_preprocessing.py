@@ -110,11 +110,12 @@ def past_future_split(series_dict, n_preds=2):
         tickers (list): list of tickers.
     They share the same indices with respect to the company.
     """
-    result = [(value[0][:-n_preds], value[0][-n_preds:], value[1], key) for key, value in series_dict.items()]
+    # we assume that the future covariates are known only one period ahead
+    result = [(value[0][:-n_preds], value[0], value[1], key) for key, value in series_dict.items()]
     past_cov, future_cov, target, tickers = zip(*result)
     return past_cov, future_cov, target, tickers
 
-def match_input_length(past_cov, future_cov, target, tickers, min_train = 10):
+def match_input_length(past_cov, future_cov, target, tickers, min_train = 10, pred_length = 2):
     """
     Match the input and output length of the train covariates and train target.
     All the components of train_cov should have the same length.
@@ -147,8 +148,9 @@ def match_input_length(past_cov, future_cov, target, tickers, min_train = 10):
     mask = [len(x) >= min_train for x in past_cov]
     past_cov, future_cov, target, tickers = [[lst[i] for i in range(len(lst)) if mask[i]] for lst in [past_cov, future_cov, target, tickers]]
     
-    combined_length = min_train + len(future_cov[0])
-    target = [target[-combined_length:] for target in target]
+    combined_length = min_train + pred_length
+    target = [t[-combined_length:] for t in target]
+    future_cov = [fcov[-combined_length:] for fcov in future_cov]
 
     return past_cov, future_cov, target, tickers
 
@@ -234,9 +236,9 @@ def scale_series(past_cov, future_cov, target):
 
     return past_cov, future_cov, target, scaler_cov, scaler_target
 
-def remove_n_predictions(test_target, test_future_cov):
+def remove_n_last_from_series(series_list, pred_length = 2):
     """
-    Removes points that we try to predict from the target.
+    Removes n last points from all the time series in the list
 
     Args:
         test_target (list): list of targets for testing.
@@ -245,7 +247,7 @@ def remove_n_predictions(test_target, test_future_cov):
     Returns:
         test_target (list): list of targets for testing with the last n points removed.
     """
-    n_remove = len(test_future_cov[0])
-    test_target = [target[:-n_remove] for target in test_target]
+    
+    series_list = [serie[:-pred_length] for serie in series_list]
 
-    return test_target
+    return series_list

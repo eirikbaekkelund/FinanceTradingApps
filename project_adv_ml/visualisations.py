@@ -118,7 +118,7 @@ def plot_predictions(predictions, targets, scalers, tickers):
             target = scalers[k].inverse_transform(targets[k]).data_array().squeeze()
             axes[k].plot(pred.time, pred, label='prediction', marker = 'o', color = 'red')
             # TODO fix quantiles for predictions
-            axes[k].fill_between(pred.time, pred - pred.std(), pred + pred.std(), alpha=0.2, color='red')
+            # axes[k].fill_between(pred.time, pred - pred.std(), pred + pred.std(), alpha=0.2, color='red')
             axes[k].plot(target.time, target, label='target', marker = 'x', color = 'blue')
             
             if k == 0:
