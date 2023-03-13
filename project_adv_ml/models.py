@@ -37,7 +37,7 @@ class HyperparameterOptimizationNBEATS:
             Integer(2, 5, name='num_stacks'),
             Integer(4, 10, name='num_blocks'),
             Integer(64, 256, name='layer_width'),
-            Integer(50, 100, name='n_epochs'),
+            Integer(50, 300, name='n_epochs'),
             Integer(1, 3, name='nr_epochs_val_period'),
             Integer(4, int(max_input_length), name='input_length'),]
 
@@ -113,6 +113,9 @@ class HyperparameterOptimizationNBEATS:
         
         result = gp_minimize(objective, self.space, n_calls=n_calls)
         return result
+    
+
+
 
 class HyperparameterOptimizationRandomForest:
     """
@@ -121,19 +124,20 @@ class HyperparameterOptimizationRandomForest:
 
     Args:
         train_target (TimeSeries): Training target
-        train_past_cov (TimeSeries): Training past covariates
-        val_target_input (TimeSeries): Validation target
-        val_past_cov (TimeSeries): Validation past covariates
+        train_future_cov (TimeSeries): Training past covariates
+        val_target (TimeSeries) : Validation target
+        val_input (TimeSeries): Validation target input for prediction
+        val_future_cov (TimeSeries): Validation past covariates
         seed (int, optional): Random seed. Defaults to 42.
     """
-    def __init__(self, output_length, train_target, train_future_cov, val_target, val_input, val_future_cov, seed=42):
-        assert isinstance(seed, int), "seed must be of type int"
-        self.output_length = output_length
+    def __init__(self, train_target, train_future_cov, val_target, val_input, val_future_cov, seed=42):
+
+        self.output_length = len(train_target[0]) - len(val_input[0])
         self.train_target = train_target
         self.train_future_cov = train_future_cov
         self.val_target = val_target
         self.val_future_cov = val_future_cov
-        self.val_input = val_input,
+        self.val_input = val_input
         self.seed = seed
         self.space = [
             Integer(2, 10, name='max_depth'),
@@ -142,7 +146,7 @@ class HyperparameterOptimizationRandomForest:
             Integer(10, 500, name='n_estimators'),
             Integer(1, 3, name='n_jobs'),
             Integer(3, 12, name='lags'),
-            Integer(-12, -1, name='max_lag_future_cov')]
+            Integer(-len(val_input[0]), -1, name='lags_future_covariates')]
     
     def objective_rf(self, params):
         """ 
@@ -151,27 +155,32 @@ class HyperparameterOptimizationRandomForest:
         Args:
             params (tuple): hyperparameters to optimize
             train_target (TimeSeries): training target
-            train_past_cov (TimeSeries): training past covariates
+            train_past_cov (TimeSeries): training future covariates
             test_target (TimeSeries): validation target
-            test_past_cov (TimeSeries): validation past covariates
+            test_past_cov (TimeSeries): validation future covariates
 
         Returns:
             float: validation loss
         """
-        max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags, max_lag = map(int, params)
-        model = RandomForest(   lags=lags,
-                                lags_future_covariates=[k for k in range(max_lag, 1)],
+        max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags, lags_future_covariates = map(int, params)
+        
+        model = RandomForest(   output_chunk_length=self.output_length,
+                                lags=lags,
+                                lags_future_covariates=[k for k in range(lags_future_covariates, 1)],
                                 max_depth=max_depth,
                                 min_samples_split=min_samples_split,
                                 min_samples_leaf=min_samples_leaf,
                                 n_estimators=n_estimators,
                                 n_jobs=n_jobs,
                                 random_state=self.seed)
+        
         model.fit(series=self.train_target, 
                   future_covariates=self.train_future_cov)
+        
         preds_val = model.predict(n=self.output_length, 
                                   series=self.val_input,
                                   future_covariates=self.val_future_cov)
+        
         return np.mean([rmse(target[-self.output_length:], pred) for target, pred in zip(self.val_target, preds_val)])
 
     def optimize(self, n_calls=50):
@@ -186,8 +195,7 @@ class HyperparameterOptimizationRandomForest:
         """
         # Wrap objective function to use named arguments
         @use_named_args(self.space)
-        
-        def objective(max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags):
+        def objective(max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags, lags_future_covariates):
             """
             Objective function for hyperparameter tuning
 
@@ -198,11 +206,12 @@ class HyperparameterOptimizationRandomForest:
                 n_estimators (int): Number of trees in the forest
                 n_jobs (int): Number of jobs to run in parallel
                 lags (int): Number of lags
+                lags_future_covariates (int): Number of lookbacks included in model
             
             Returns:
                 float: validation loss
             """
-            params = (max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags)
+            params = (max_depth, min_samples_split, min_samples_leaf, n_estimators, n_jobs, lags, lags_future_covariates)
             return self.objective_rf(params)
         
         result = gp_minimize(objective, self.space, n_calls=n_calls)
