@@ -327,9 +327,7 @@ class HyperparameterOptimization:
         val_future_cov (TimeSeries): Validation future covariates
         seed (int, optional): Random seed. Defaults to 42.
     """
-    def __init__(self, model, train_target, train_past_cov, train_future_cov, val_target, val_input, val_past_cov, val_future_cov, seed=42):
-        assert model in ['nbeats', 'rf', 'xgb'], "Model not supported. Model must be either 'nbeats', 'xgb' or 'rf'."
-        self.model = model
+    def __init__(self, train_target, train_past_cov, train_future_cov, val_target, val_input, val_past_cov, val_future_cov, seed=42):
         self.train_target = train_target
         self.train_past_cov = train_past_cov
         self.train_future_cov = train_future_cov
@@ -339,7 +337,7 @@ class HyperparameterOptimization:
         self.val_future_cov = val_future_cov
         self.seed = seed
     
-    def optimize(self, n_calls=50):
+    def optimize(self, model, n_calls=50):
         """
         Optimize hyperparameters using Bayesian optimization and Gaussian processes.
 
@@ -349,9 +347,10 @@ class HyperparameterOptimization:
         Returns:
             skopt.OptimizeResult: Optimization result
         """
-        if self.model == 'nbeats':
+        assert model in ['nbeats', 'rf', 'xgb'], 'Model must be either nbeats, rf or xgb'
+        if model == 'nbeats':
             hyperopt = HyperparameterOptimizationNBEATS(self.train_target, self.train_past_cov, self.val_target, self.val_input, self.val_past_cov, self.val_future_cov, self.seed)
-        elif self.model == 'rf':
+        elif model == 'rf':
             hyperopt = HyperparameterOptimizationRandomForest(self.train_target, self.train_future_cov, self.val_target, self.val_input, self.val_future_cov, self.seed)
         else:
             hyperopt = HyperparameterOptimizationXGB(self.train_target, self.train_future_cov, self.val_target, self.val_input, self.val_future_cov, self.seed)
