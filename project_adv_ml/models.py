@@ -7,6 +7,7 @@ from skopt.space import Integer, Real
 from skopt.utils import use_named_args
 
 # k fold cross validation could be used for tree based methods, expensive for NBEATS
+# TODO remove n_jobs, not a parameter of the model
 
 class HyperparameterOptimizationNBEATS:
     """
@@ -22,7 +23,7 @@ class HyperparameterOptimizationNBEATS:
         val_past_cov (TimeSeries): Validation past covariates
         seed (int, optional): Random seed. Defaults to 42.
     """
-    def __init__(self, max_input_length, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
+    def __init__(self, train_target, train_past_cov, val_target, val_input, val_past_cov, seed=42):
         self.output_length = len(train_target[0]) - len(val_input[0])
         self.train_target = train_target
         self.train_past_cov = train_past_cov
@@ -36,7 +37,7 @@ class HyperparameterOptimizationNBEATS:
             Integer(64, 256, name='layer_width'),
             Integer(50, 300, name='n_epochs'),
             Integer(1, 3, name='nr_epochs_val_period'),
-            Integer(4, int(max_input_length), name='input_length')]
+            Integer(4, len(val_input[0]), name='input_length')]
 
     def objective_nbeats(self, params):
         """ 
@@ -150,11 +151,6 @@ class HyperparameterOptimizationRandomForest:
 
         Args:
             params (tuple): hyperparameters to optimize
-            train_target (TimeSeries): training target
-            train_past_cov (TimeSeries): training future covariates
-            test_target (TimeSeries): validation target
-            test_past_cov (TimeSeries): validation future covariates
-
         Returns:
             float: validation loss
         """
@@ -202,8 +198,7 @@ class HyperparameterOptimizationRandomForest:
                 n_estimators (int): Number of trees in the forest
                 n_jobs (int): Number of jobs to run in parallel
                 lags (int): Number of lags
-                lags_future_covariates (int): Number of lookbacks included in model
-            
+                lags_future_covariates (int): Number of lags for future covariates
             Returns:
                 float: validation loss
             """
@@ -212,6 +207,8 @@ class HyperparameterOptimizationRandomForest:
         
         result = gp_minimize(objective, self.space, n_calls=n_calls)
         return result
+    
+# TODO check why this doesnt converge 
     
 class HyperparameterOptimizationXGB:
     """
@@ -243,16 +240,12 @@ class HyperparameterOptimizationXGB:
             Integer(-len(val_input[0]), -1, name='lags_future_covariates'),
             Real(0.001, 0.5, name='learning_rate')]
     
-    def objective_rf(self, params):
+    def objective_xgb(self, params):
         """ 
         Optimization function for hyperparameter tuning
 
         Args:
             params (tuple): hyperparameters to optimize
-            train_target (TimeSeries): training target
-            train_past_cov (TimeSeries): training future covariates
-            test_target (TimeSeries): validation target
-            test_past_cov (TimeSeries): validation future covariates
 
         Returns:
             float: validation loss
@@ -306,7 +299,7 @@ class HyperparameterOptimizationXGB:
                 float: validation loss
             """
             params = (max_depth, n_estimators, n_jobs, lags, lags_future_covariates, learning_rate)
-            return self.objective_rf(params)
+            return self.objective_xgb(params)
         
         result = gp_minimize(objective, self.space, n_calls=n_calls)
         return result
@@ -349,10 +342,35 @@ class HyperparameterOptimization:
         """
         assert model in ['nbeats', 'rf', 'xgb'], 'Model must be either nbeats, rf or xgb'
         if model == 'nbeats':
-            hyperopt = HyperparameterOptimizationNBEATS(self.train_target, self.train_past_cov, self.val_target, self.val_input, self.val_past_cov, self.val_future_cov, self.seed)
+            hyperopt = HyperparameterOptimizationNBEATS(train_target=self.train_target, 
+                                                        train_past_cov=self.train_past_cov, 
+                                                        val_target=self.val_target, 
+                                                        val_input=self.val_input, 
+                                                        val_past_cov=self.val_past_cov, 
+                                                        seed=self.seed)
         elif model == 'rf':
-            hyperopt = HyperparameterOptimizationRandomForest(self.train_target, self.train_future_cov, self.val_target, self.val_input, self.val_future_cov, self.seed)
+            hyperopt = HyperparameterOptimizationRandomForest(train_target=self.train_target, 
+                                                              train_future_cov=self.train_future_cov, 
+                                                              val_target=self.val_target,
+                                                              val_input=self.val_input,
+                                                              val_future_cov=self.val_future_cov,
+                                                              seed=self.seed)
         else:
-            hyperopt = HyperparameterOptimizationXGB(self.train_target, self.train_future_cov, self.val_target, self.val_input, self.val_future_cov, self.seed)
+            hyperopt = HyperparameterOptimizationXGB(train_target=self.train_target, 
+                                                              train_future_cov=self.train_future_cov, 
+                                                              val_target=self.val_target,
+                                                              val_input=self.val_input,
+                                                              val_future_cov=self.val_future_cov,
+                                                              seed=self.seed)
         
-        return hyperopt.optimize(n_calls=n_calls)
+        result = hyperopt.optimize(n_calls=n_calls)
+        print(' -------------------------------------------------')
+        print(f'| \t\t Model: {model}')
+        print('|-------------------------------------------------')
+        for dim, x in zip(hyperopt.space, result.x):
+
+            print('| \t {} \t | \t {}'.format(round(x,3), dim.name))
+        print(' -------------------------------------------------')
+        
+        return result
+
