@@ -3,6 +3,8 @@ import numpy as np
 from darts.dataprocessing.transformers import Scaler
 import pandas as pd
 import random
+# set random seed for reproducibility
+np.random.seed(42)
 
 def set_index(df, freq='Q'):
     """ 
@@ -137,6 +139,8 @@ def match_input_length(past_cov, future_cov, target, tickers, min_train = 10, pr
         tickers (list): list of tickers.
     The indices of the lists are ordered with respect to the same company.
     """
+    # TODO see if we can have variable length of past covariates, future covariates, and target
+    
     min_length_series = min([len(x) for x in past_cov])
 
     if min_length_series > min_train:
@@ -205,49 +209,33 @@ def train_test_split(past_cov, future_cov, target, tickers, scaler_cov, scaler_t
 
     return train_past_cov, test_past_cov, train_future_cov, test_future_cov, train_target, test_target, tickers_train, tickers_test, scaler_cov_train, scaler_cov_test, scaler_target_train, scaler_target_test
 
-def split_train_val(train_target, train_past_cov, train_future_cov, train_input, tickers, proportion_train=0.8):
+# i know it is redundant from above, im just lazy, 
+# the difference from function above is that it has inputs to the model predict call
+def split_train_val(target, past_cov, future_cov, input, scalers, tickers, proportion_train=0.8):
     """
     Splits the training data to training and validation sets
-
-    Args:
-        train_target (list): list of targets for training
-        train_past_cov (list): list of past covariates for training
-        train_future_cov (list): list of future covariates for training
-        train_input (list): list of inputs for training
-        tickers (list): list of tickers for training
-        proportion_train (float): proportion of data to be used for training
-
-    Returns:
-        target_train (list): list of targets for training
-        past_cov_train (list): list of past covariates for training
-        future_cov_train (list): list of future covariates for training
-        input_train (list): list of inputs for training
-        tickers_train (list): list of tickers for training
-        target_val (list): list of targets for validation
-        past_cov_val (list): list of past covariates for validation
-        future_cov_val (list): list of future covariates for validation
-        input_val (list): list of inputs for validation
-        tickers_val (list): list of tickers for validation
     """
-    n_train = int(proportion_train * len(train_target))
-    indices = np.random.choice(len(train_target), len(train_target), replace=False)
+    n_train = int(proportion_train * len(target))
+    indices = np.random.choice(len(target), len(target), replace=False)
 
     idx_train = indices[:n_train]
     idx_val = indices[n_train:]
 
-    target_train = [train_target[i] for i in idx_train]
-    past_cov_train = [train_past_cov[i] for i in idx_train]
-    future_cov_train = [train_future_cov[i] for i in idx_train]
-    input_train = [train_input[i] for i in idx_train]
+    target_train = [target[i] for i in idx_train]
+    past_cov_train = [past_cov[i] for i in idx_train]
+    future_cov_train = [future_cov[i] for i in idx_train]
+    input_train = [input[i] for i in idx_train]
     tickers_train = [tickers[i] for i in idx_train]
+    scalers_train = [tickers[i] for i in idx_train]
 
-    target_val = [train_target[i] for i in idx_val]
-    past_cov_val = [train_past_cov[i] for i in idx_val]
-    future_cov_val = [train_future_cov[i] for i in idx_val]
-    input_val = [train_input[i] for i in idx_val]
+    target_val = [target[i] for i in idx_val]
+    past_cov_val = [past_cov[i] for i in idx_val]
+    future_cov_val = [future_cov[i] for i in idx_val]
+    input_val = [input[i] for i in idx_val]
     tickers_val = [tickers[i] for i in idx_val]
+    scalers_val = [scalers[i] for i in idx_val]
 
-    return target_train, past_cov_train, future_cov_train, input_train, tickers_train, target_val, past_cov_val, future_cov_val, input_val, tickers_val
+    return target_train, past_cov_train, future_cov_train, input_train, tickers_train, scalers_train, target_val, past_cov_val, future_cov_val, input_val, tickers_val, scalers_val
 
 def scale_series(past_cov, future_cov, target):
     """

@@ -5,9 +5,12 @@ import numpy as np
 from skopt import gp_minimize
 from skopt.space import Integer, Real
 from skopt.utils import use_named_args
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+
 
 # k fold cross validation could be used for tree based methods, expensive for NBEATS
-# TODO remove n_jobs, not a parameter of the model
+# TODO remove n_jobs, not a parameter of the model for xgboost and random forest
+# TODO add early stopping for all models, especially NBEATS
 
 class HyperparameterOptimizationNBEATS:
     """
@@ -53,6 +56,15 @@ class HyperparameterOptimizationNBEATS:
         Returns:
             float: validation loss
         """
+        # stop training when validation loss does not decrease more than 0.05 (`min_delta`) over
+        # a period of 5 epochs (`patience`)
+        my_stopper = EarlyStopping(
+            monitor="val_loss",
+            patience=5,
+            min_delta=0.005,
+            mode='min',
+        )
+
         n_stacks, n_blocks, layer_width, epochs, val_wait, input_length = map(int, params)
         quantiles = [0.01, 0.1, 0.2, 0.5, 0.8, 0.9, 0.99]
         model = NBEATSModel(input_chunk_length=input_length, 
@@ -63,6 +75,7 @@ class HyperparameterOptimizationNBEATS:
                             n_epochs=epochs,
                             likelihood=QuantileRegression(quantiles),
                             optimizer_kwargs={"lr": 1e-3},
+                            pl_trainer_kwargs={"callbacks": [my_stopper]},
                             generic_architecture=True,
                             trend_polynomial_degree=2,
                             random_state=self.seed,
@@ -252,15 +265,15 @@ class HyperparameterOptimizationXGB:
         """
         max_depth, n_estimators, n_jobs, lags, lags_future_covariates, learning_rate = map(int, params)
         
-        model = XGBModel(       output_chunk_length=self.output_length,
-                                lags=lags,
-                                lags_future_covariates=[k for k in range(lags_future_covariates, 1)],
-                                max_depth=max_depth,
-                                n_estimators=n_estimators,
-                                n_jobs=n_jobs,
-                                random_state=self.seed,
-                                learning_rate=learning_rate)
-        
+        model = XGBModel(output_chunk_length=self.output_length,
+                        lags=lags,
+                        lags_future_covariates=[k for k in range(lags_future_covariates, 1)],
+                        max_depth=max_depth,
+                        n_estimators=n_estimators,
+                        n_jobs=n_jobs,
+                        random_state=self.seed,
+                        learning_rate=learning_rate)
+
         model.fit(series=self.train_target, 
                   future_covariates=self.train_future_cov)
         
@@ -357,11 +370,11 @@ class HyperparameterOptimization:
                                                               seed=self.seed)
         else:
             hyperopt = HyperparameterOptimizationXGB(train_target=self.train_target, 
-                                                              train_future_cov=self.train_future_cov, 
-                                                              val_target=self.val_target,
-                                                              val_input=self.val_input,
-                                                              val_future_cov=self.val_future_cov,
-                                                              seed=self.seed)
+                                                     train_future_cov=self.train_future_cov, 
+                                                     val_target=self.val_target,
+                                                     val_input=self.val_input,
+                                                     val_future_cov=self.val_future_cov,
+                                                     seed=self.seed)
         
         result = hyperopt.optimize(n_calls=n_calls)
         print(' -------------------------------------------------')
