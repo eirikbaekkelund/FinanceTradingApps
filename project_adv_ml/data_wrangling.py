@@ -430,3 +430,55 @@ def encode_float(df, col):
     df[col] = df[col].map(mapper)
 
     return df, inv_mapper
+
+def rmse_residual_vector(predictions, target):
+    """
+    Calculate elementwise difference between predictions and target in a flattened array.
+
+    Args: 
+        predictions (TimeSeries): TimeSeries of predictions where each entry is a vector of length n_preds.
+        target (TimeSeries): TimeSeries of target values where the last n_preds entries are the target values.
+    """
+    return [ np.sqrt( (( target[-1:].data_array().squeeze() - pred[-1:].data_array().squeeze() )**2).to_numpy() ) for target, pred in zip(target, predictions) ]
+
+def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats, preds_train_rf, preds_test_rf, preds_val_rf, preds_train_xgb, preds_test_xgb, preds_val_xgb, train_target, test_target, val_target):
+    """
+    Calculate the RMSE of the predictions for each model and each time series.
+
+    Args:
+        preds_train_nbeats (list): List of TimeSeries of predictions for the NBeats model on the training set.
+        preds_test_nbeats (list): List of TimeSeries of predictions for the NBeats model on the test set.
+        preds_val_nbeats (list): List of TimeSeries of predictions for the NBeats model on the validation set.
+        preds_train_rf (list): List of TimeSeries of predictions for the Random Forest model on the training set.
+        preds_test_rf (list): List of TimeSeries of predictions for the Random Forest model on the test set.
+        preds_val_rf (list): List of TimeSeries of predictions for the Random Forest model on the validation set.
+        preds_train_xgb (list): List of TimeSeries of predictions for the XGBoost model on the training set.
+        preds_test_xgb (list): List of TimeSeries of predictions for the XGBoost model on the test set.
+        preds_val_xgb (list): List of TimeSeries of predictions for the XGBoost model on the validation set.
+        train_target (list): List of TimeSeries of the target values for the training set.
+        test_target (list): List of TimeSeries of the target values for the test set.
+        val_target (list): List of TimeSeries of the target values for the validation set.
+    Returns 
+        df_res (pd.DataFrame): DataFrame with the RMSE of the predictions for each model and each time series.
+    """
+    rmse_res_nbeats_train = rmse_residual_vector(predictions=preds_train_nbeats, target=train_target)
+    rmse_res_nbeats_test = rmse_residual_vector(predictions=preds_test_nbeats, target=test_target)
+    rmse_res_nbeats_val = rmse_residual_vector(predictions=preds_val_nbeats, target=val_target)
+    rmse_res_nbeats = rmse_res_nbeats_train +rmse_res_nbeats_val + rmse_res_nbeats_test
+
+    rmse_res_rf_train = rmse_residual_vector(predictions=preds_train_rf, target=train_target)
+    rmse_res_rf_test = rmse_residual_vector(predictions=preds_test_rf, target=test_target)
+    rmse_res_rf_val = rmse_residual_vector(predictions=preds_val_rf, target=val_target)
+    rmse_res_rf = rmse_res_rf_train + rmse_res_rf_test + rmse_res_rf_val
+
+    rmse_res_xgb_train = rmse_residual_vector(predictions=preds_train_xgb, target=train_target)
+    rmse_res_xgb_test = rmse_residual_vector(predictions=preds_test_xgb, target=test_target)
+    rmse_res_xgb_val = rmse_residual_vector(predictions=preds_val_xgb, target=val_target)
+    rmse_res_xgb = rmse_res_xgb_train + rmse_res_xgb_test + rmse_res_xgb_val 
+
+    df_res = pd.DataFrame.from_dict({'res_nbeats_train' : rmse_res_nbeats_train, 'res_nbeats_test' : rmse_res_nbeats_test, 'res_nbeats_val' : rmse_res_nbeats_val, 'res_nbeats' : rmse_res_nbeats,
+              'res_rf_train' : rmse_res_rf_train, 'res_rf_test' : rmse_res_rf_test, 'res_rf_val' : rmse_res_rf_val, 'res_rf' : rmse_res_rf,
+              'res_xgb_train' : rmse_res_xgb_train, 'res_xgb_test' : rmse_res_xgb_test, 'res_xgb_val' : rmse_res_xgb_val, 'res_xgb' : rmse_res_xgb}, orient='index')
+    df_res = df_res.transpose()
+
+    return df_res

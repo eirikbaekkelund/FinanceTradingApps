@@ -129,3 +129,44 @@ def plot_predictions(predictions, targets, scalers, tickers):
             axes[k].tick_params(axis='y', labelrotation=30, labelsize=8)
             axes[k].set_title(f"{tickers[k]}", fontweight='bold')
     plt.show()
+
+def plot_residuals(df):
+    assert 'res_nbeats_train' in df.columns, "residuals not found in dataframe"
+    assert 'res_rf_train' in df.columns, "residuals not found in dataframe"
+    assert 'res_xgb_train' in df.columns, "residuals not found in dataframe"
+    assert 'res_nbeats_val' in df.columns, "residuals not found in dataframe"
+    assert 'res_rf_val' in df.columns, "residuals not found in dataframe"
+    assert 'res_xgb_val' in df.columns, "residuals not found in dataframe"
+    assert 'res_nbeats_test' in df.columns, "residuals not found in dataframe"
+    assert 'res_rf_test' in df.columns, "residuals not found in dataframe"
+    assert 'res_xgb_test' in df.columns, "residuals not found in dataframe"
+    
+    fig, ax = plt.subplots(nrows=1, ncols=4, sharey=True, figsize=(25, 7))
+
+    sns.histplot(data=df, x='res_nbeats_train', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[0])
+    sns.histplot(data=df, x='res_rf_train', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[0])
+    sns.histplot(data=df, x='res_xgb_train', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[0])
+    ax[0].set_title("Training Residuals", fontweight='bold')
+    ax[0].set_xlabel("RMSE")
+
+    sns.histplot(data=df, x='res_nbeats_val', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[1])
+    sns.histplot(data=df, x='res_rf_val', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[1])
+    sns.histplot(data= df, x='res_xgb_val', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[1])
+    ax[1].set_title('Validation Residuals', fontweight='bold')
+    ax[1].set_xlabel("RMSE")
+
+    sns.histplot(data=df, x='res_nbeats_test', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[2])
+    sns.histplot(data=df, x='res_rf_test', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[2])
+    sns.histplot(data=df, x='res_xgb_test', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[2])
+    ax[2].set_title('Test Residuals', fontweight='bold')
+    ax[2].set_xlabel("RMSE")
+
+    sns.histplot(data=df, x='res_nbeats', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[3])
+    sns.histplot(data=df, x='res_rf', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[3])
+    sns.histplot(data=df, x='res_xgb', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[3])
+    ax[3].set_title('Total Residuals (Training, Validation, and Test)', fontweight='bold')
+    ax[3].set_xlabel("RMSE")
+
+
+    plt.legend()
+    plt.show()
