@@ -377,13 +377,40 @@ class HyperparameterOptimization:
                                                      seed=self.seed)
         
         result = hyperopt.optimize(n_calls=n_calls)
+        
+        if model == 'xgb':
+            mapper =  { 'max_depth' : result.x[0],
+                        'n_estimators' : result.x[1],
+                        'n_jobs' : -1,
+                        'lags' : int(result.x[3]),
+                        'lags_future_covariates' : [k for k in range(result.x[4], 1)],
+                        'learning_rate' : result.x[5] }
+        
+        elif model == 'rf':
+            mapper = {  'max_depth': result.x[0],
+                        'min_samples_split' : result.x[1],
+                        'min_samples_leaf' : result.x[2],
+                        'n_estimators' : result.x[3],
+                        'n_jobs' : -1,
+                        'lags' : int(result.x[5]),
+                        'lags_future_covariates' : [k for k in range(result.x[6], 1)]}
+        
+        else:
+            mapper = {'num_stacks' : result.x[0],
+                      'num_blocks' : result.x[1], 
+                      'layer_width' : result.x[2],
+                      'n_epochs' : result.x[3], 
+                      'nr_epochs_val_period' : result.x[4],
+                      'input_length' : result.x[5]}
+
+        
         print(' -------------------------------------------------')
         print(f'| \t\t Model: {model}')
         print('|-------------------------------------------------')
         for dim, x in zip(hyperopt.space, result.x):
 
             print('| \t {} \t | \t {}'.format(round(x,3), dim.name))
-        print(' -------------------------------------------------')
+            print(' -------------------------------------------------')
         
-        return result
+        return result, mapper
 
