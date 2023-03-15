@@ -141,7 +141,7 @@ def plot_residuals(df):
     assert 'res_rf_test' in df.columns, "residuals not found in dataframe"
     assert 'res_xgb_test' in df.columns, "residuals not found in dataframe"
     
-    fig, ax = plt.subplots(nrows=1, ncols=4, sharey=True, figsize=(25, 7))
+    fig, ax = plt.subplots(nrows=1, ncols=3, sharey=False, figsize=(20, 5))
 
     sns.histplot(data=df, x='res_nbeats_train', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[0])
     sns.histplot(data=df, x='res_rf_train', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[0])
@@ -161,11 +161,6 @@ def plot_residuals(df):
     ax[2].set_title('Test Residuals', fontweight='bold')
     ax[2].set_xlabel("RMSE")
 
-    sns.histplot(data=df, x='res_nbeats', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[3])
-    sns.histplot(data=df, x='res_rf', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[3])
-    sns.histplot(data=df, x='res_xgb', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[3])
-    ax[3].set_title('Total Residuals (Training, Validation, and Test)', fontweight='bold')
-    ax[3].set_xlabel("RMSE")
 
 
     plt.legend()

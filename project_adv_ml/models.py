@@ -59,7 +59,7 @@ class HyperparameterOptimizationNBEATS:
         # stop training when validation loss does not decrease more than 0.05 (`min_delta`) over
         # a period of 5 epochs (`patience`)
         my_stopper = EarlyStopping(
-            monitor="val_loss",
+            monitor="train_loss",
             patience=5,
             min_delta=0.005,
             mode='min',
@@ -384,7 +384,8 @@ class HyperparameterOptimization:
                         'n_jobs' : -1,
                         'lags' : int(result.x[3]),
                         'lags_future_covariates' : [k for k in range(result.x[4], 1)],
-                        'learning_rate' : result.x[5] }
+                        'learning_rate' : result.x[5],
+                        'output_chunk_length' : hyperopt.output_length}
         
         elif model == 'rf':
             mapper = {  'max_depth': result.x[0],
@@ -393,15 +394,21 @@ class HyperparameterOptimization:
                         'n_estimators' : result.x[3],
                         'n_jobs' : -1,
                         'lags' : int(result.x[5]),
-                        'lags_future_covariates' : [k for k in range(result.x[6], 1)]}
+                        'lags_future_covariates' : [k for k in range(result.x[6], 1)],
+                        'output_chunk_length' : hyperopt.output_length}
         
         else:
-            mapper = {'num_stacks' : result.x[0],
-                      'num_blocks' : result.x[1], 
-                      'layer_width' : result.x[2],
-                      'n_epochs' : result.x[3], 
-                      'nr_epochs_val_period' : result.x[4],
-                      'input_length' : result.x[5]}
+            mapper = {'num_stacks' : int(result.x[0]),
+                      'num_blocks' : int(result.x[1]), 
+                      'layer_widths' : int(result.x[2]),
+                      'n_epochs' : int(result.x[3]), 
+                      'nr_epochs_val_period' : int(result.x[4]),
+                      'input_chunk_length' : int(result.x[5]),
+                      'output_chunk_length' : int(hyperopt.output_length),
+                      'random_state' : int(self.seed),
+                      'generic_architecture' : True,
+                      'optimizer_kwargs' : {'lr' : 1e-3},
+                      'likelihood' : QuantileRegression([0.01, 0.1, 0.2, 0.5, 0.8, 0.9, 0.99]) }
 
         
         print(' -------------------------------------------------')
