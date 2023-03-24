@@ -52,7 +52,10 @@ def get_data(file_name='effr.xlsx'):
     df = df_sp500.merge(df_rf, how='left', left_index=True, right_index=True)
     df = df.dropna(axis=0)
     df['Date'] = df.index
-
+    df['Time'] = np.arange(len(df))
+    df['Price Change'] = df['SPY'].pct_change()
+    # reset index to be 0 to len(df)
+    df = df.reset_index(drop=True)
     
     return df
 
@@ -82,9 +85,9 @@ def moving_averages(df, col='SPY'):
     Returns:
         df (pd.DataFrame): dataframe including excess return and moving averages
     """
-    df['10-day MA' + f' {col}'] = df[col].rolling(window=10).mean()
-    df['20-day MA' + f' {col}'] = df[col].rolling(window=20).mean()
-    df['30-day MA' + f' {col}'] = df[col].rolling(window=30).mean()
+    df['10 MA' + f' {col}'] = df[col].rolling(window=10).mean()
+    df['20 MA' + f' {col}'] = df[col].rolling(window=20).mean()
+    df['30 MA' + f' {col}'] = df[col].rolling(window=30).mean()
     
     return df
 
@@ -97,10 +100,9 @@ def exponential_moving_averages(df, col='SPY'):
     Returns:
         df (pd.DataFrame): dataframe including excess return and moving averages
     """
-    df['10-day EMA' + f' {col}'] = df[col].ewm(span=10, adjust=False).mean()
-    df['20-day EMA' + f' {col}'] = df[col].ewm(span=20, adjust=False).mean()
-    df['30-day EMA' + f' {col}'] = df[col].ewm(span=30, adjust=False).mean()
-    df['90-day EMA' + f' {col}'] = df[col].ewm(span=90, adjust=False).mean()
+    df['10 EMA' + f' {col}'] = df[col].ewm(span=10, adjust=False).mean()
+    df['20 EMA' + f' {col}'] = df[col].ewm(span=20, adjust=False).mean()
+    df['30 EMA' + f' {col}'] = df[col].ewm(span=30, adjust=False).mean()
     return df
 
 def bollinger_bands(df, col='SPY', window=20, sigma=2):
@@ -118,5 +120,27 @@ def bollinger_bands(df, col='SPY', window=20, sigma=2):
     """
     ma = df[col].rolling(window=window).mean()
     std = df[col].rolling(window=window).std()
-    df['Upper Band'] = ma + (std * sigma)
-    df['Lower Band'] = ma - (std * sigma)
+    df['BB Upper'] = ma + (std * sigma)
+    df['BB Lower'] = ma - (std * sigma)
+
+    return df
+
+def kelly_fraction(df, col='Excess Return'):
+    """
+    Computes the mean and variance of the column for all values up to the index
+    for the entire dataframe.
+
+    Args:
+        df (pd.DataFrame): dataframe with data
+    
+    Returns:
+        df (pd.DataFrame): dataframe with means and variances
+    """
+    # compute mean from GP predictions based on all values up to the index
+    mean = df[f'{col}'].expanding().mean()
+    std = df[f'{col}'].expanding().std()
+
+    df['Kelly Fraction'] =  ( df[col] - mean ) / std
+
+    return df
+

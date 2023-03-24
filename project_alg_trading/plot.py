@@ -10,14 +10,19 @@ def plot_excess_return(df):
         df (pd.DataFrame): dataframe including excess return
     """
     plt.figure(figsize=(15, 5))
+    
     plt.plot(df['Excess Return'])
+    
     plt.title('Excess Return of S&P500 ETF', fontweight='bold')
     plt.xlabel('Date', fontweight='bold')
+    plt.ylabel('Excess Return', fontweight='bold')
+
     # rotate x-axis labels
     # include 10 ticks 
+    
     interval = len(df.index)//10
     plt.xticks(df.index[::interval], rotation=30)
-    plt.ylabel('Excess Return', fontweight='bold')
+    
     plt.show()
 
 def plot_time_series_annotated(df, ylabel, x_col='Date', y_cols=['Close Price'], title='Apple', facecolor='whitesmoke', figsize=(14,4)):
@@ -85,30 +90,34 @@ def plot_distribution(X, f, title='Distribution'):
         X (np.array): array of x values
         f (np.array): array of sampled values
     """
-    fig, ax = plt.subplots(figsize=(15, 5))
+    _ , ax = plt.subplots(figsize=(15, 5))
+    
     ax.plot(np.arange(f.shape[-1]), f.mean(axis=0), label='mean')
     ax.fill_between(X[:, 0], f.mean(axis=0) - f.std(axis=0), f.mean(axis=0) + f.std(axis=0), alpha=0.5, label='std')
+    
     ax.set_xlabel('x')
     ax.set_ylabel('f(x)')
     ax.set_title(title)
+    
     ax.legend()
+    
     plt.show()
 
-def plot_gp(df, target_col='Excess Return'):
-    plt.plot(df['GP'].values, label='GP')
-    plt.fill_between(np.arange(len(df)), 
-                     df['GP'].values + df['GP Std Dev'].values, 
-                     df['GP'].values - df['GP Std Dev'].values, 
-                     alpha=0.2, label='GP Std Dev')
-    plt.plot(df[target_col].values, label=f'{target_col}')
-    # scatter x marker where signals is 1 and -1
-    mask_buy = df['GP Signal'] == 1
-    mask_sell = df['GP Signal'] == -1
+def plot_strategy(df):
+    
 
-    plt.scatter(np.arange(len(df))[mask_buy], df['GP'][mask_buy], 
-                marker='^', color='green', label='Buy', s=10)
-    plt.scatter(np.arange(len(df))[mask_sell], df['GP'][mask_sell], 
-                marker='v', color='red', label='Sell', s=10)
+    plt.plot(df['Account'], label='Account')
+    plt.plot(df['Benchmark Account'], label='Benchmark Account')
+    plt.plot(df['Buy and Hold Account'], label='Buy and Hold Account')
+    
+    mask_buy = df['Signal'] == 1
+    mask_sell = df['Signal'] == -1
+
+    plt.scatter(df[mask_buy].index, df[mask_buy]['Account'], marker='^', color='green', label='Buy')
+    plt.scatter(df[mask_sell].index, df[mask_sell]['Account'], marker='v', color='red', label='Sell')
+
     plt.legend()
-    plt.title('Gaussian Process Trading', fontweight='bold')
     plt.show()
+
+
+
