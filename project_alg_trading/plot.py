@@ -104,10 +104,9 @@ def plot_distribution(X, f, title='Distribution'):
     plt.show()
 
 def plot_strategy(df):
-    
-
+    plt.rcParams["figure.figsize"] = (20,5)
     plt.plot(df['Account'], label='Account')
-    plt.plot(df['Benchmark Account'], label='Benchmark Account')
+    plt.plot(df['Risk Free Account'], label='Risk Free Account')
     plt.plot(df['Buy and Hold Account'], label='Buy and Hold Account')
     
     mask_buy = df['Signal'] == 1
@@ -119,5 +118,22 @@ def plot_strategy(df):
     plt.legend()
     plt.show()
 
+def plot_margin_bollinger_strategy(df):
+    plt.rcParams["figure.figsize"] = (20,5)
+    plt.fill_between(x = df.index, 
+                    y1 = df['Account'],
+                    y2 = - (df['Account']), 
+                    color = 'purple',
+                    alpha=0.2,
+                    label='$[-V_t \cdot L, V_t \cdot L]$')
+    mask_buy = df['Signal'] == 1
+    mask_sell = df['Signal'] == -1
+
+    plt.scatter(df[mask_buy].index, df[mask_buy]['Account'], marker='^', color='green', label='Buy', s=15, alpha=0.4)
+    plt.scatter(df[mask_sell].index, df[mask_sell]['Account'], marker='v', color='red', label='Sell', s=15, alpha=0.4)
+
+    plt.plot(df['Theta'], label='$\\theta_t$')
+    plt.legend()
+    plt.title('Long Full Leverage Strategy')
 
 

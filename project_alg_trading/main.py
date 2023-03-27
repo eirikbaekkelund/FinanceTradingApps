@@ -87,7 +87,7 @@ def mean_reversion_strategy(df, col='SPY'):
             account[i] = account[i-1] * ( 1 + df['Excess Return'][i] )
         else:
             account[i] = account[i-1] * ( 1 + df['EFFR'][i])
-
+            
         
         benchmark_account[i] = benchmark_account[i-1] * ( 1 + df['EFFR'][i])
         buy_and_hold_account[i] = buy_and_hold_account[i-1] * ( 1 + df['Excess Return'][i])
@@ -175,25 +175,3 @@ if __name__ == "__main__":
     df = mean_reversion_strategy(df, col='SPY')
     pt.plot_strategy(df)
 
-X = df[['SPY', 'Excess Return', 'Price Change', 'Volume']]
-# standardize the data
-X = (X - X.mean()) / X.std()
-y = np.where(df['SPY'].shift(-1) > df['SPY'], 1, 0)
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-
-# find best hyperparameters
-best_tree, best_depth, best_lr = cross_val_xgboost(X_train, y_train)
-
-# train on best hyperparameters
-model = xgb.XGBClassifier(n_estimators=best_tree,
-                            max_depth=best_depth,
-                            learning_rate=best_lr)
-model.fit(X_train, y_train)
-
-# Make predictions on the test set
-predictions = model.predict(X_test)
-
-# Calculate and print the accuracy
-print("Accuracy: {}".format(accuracy_score(y_test, predictions)))
