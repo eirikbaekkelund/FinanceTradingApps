@@ -1,113 +1,164 @@
 import numpy as np
-from scipy.stats import norm
-def transaction_cost(position_size, price, transaction_cost=0.5):
-    """
-    Computes the transaction cost for a given position size.
+import data
 
-    Args:
-        position_size (float): position size
-        price (float): price of the stock
-        transaction_cost (float): transaction cost in percent
-    
-    Returns:
-        transaction_cost (float): transaction cost
+def risk_free_buy_and_hold(df, leverage=5, start_val = 2*(10**5)):
     """
-    return position_size * price * transaction_cost
-
-def kelly_return(kelly_fraction, account_val, price, leverage):
+    Buys and holds SPY stock and uses the risk free rate to calculate the account value.
     """
-    Computes the optimal fraction of the account value to invest in the stock.
-    The optimal fraction is computed based on the Kelly Criterion.
-    Also consideres the leverage available based on account value.
-
-    Args:
-        df (pd.DataFrame): dataframe with data
-    """
-    # assume kelly fraction is N(0,1)
-    kelly_proportion = norm(loc=0, scale=1).cdf(kelly_fraction)
-    
-    if kelly_proportion * account_val <= (account_val * leverage) / price:
-        return kelly_proportion * account_val
-    
-    return (account_val * leverage) / price
-
-def trade_return_sell(account_val, kelly_fraction, price_acquired, price_sold, effr, leverage, iter=None):
-    """
-    Computes the return of a trade based on the Kelly fraction and the price acquired and sold.
-
-    Args:
-        kelly_fraction (float): fraction of the account value to invest in the stock
-        price_acquired (float): price at which the stock was acquired
-        price_sold (float): price at which the stock was sold
-        effr (float): effective risk free rate
-    
-    Returns:
-        return (float): return of the trade
-    """
-    
-    kelly_fraction = kelly_return(kelly_fraction=kelly_fraction,
-                                account_val=account_val,
-                                price=price_acquired,
-                                leverage=leverage)
-   
-    print('kelly fraction: ', kelly_fraction)
-    
-    return price_sold * kelly_fraction * ( (price_sold - price_acquired) / price_acquired - effr )
-    
-    
-def trade(df, leverage=5, start_val=2*(10**5)):
-    """
-    Trading strategy based on the GP predictions.
-
-    Args:
-        df (pd.DataFrame): dataframe with data
-        leverage (int): leverage
-        start_val (int): starting value of the account
-        transaction_cost (float): transaction cost in percent
-    
-    Returns:
-        df (pd.DataFrame): dataframe with GP trading strategy
-    """
-
-    account = np.zeros(len(df))
-    benchmark_account = np.zeros(len(df))
+    risk_free_account = np.zeros(len(df))
     buy_and_hold_account = np.zeros(len(df))
-    gp_signal = np.zeros(len(df))
 
-    # add starting value to the accounts for all trade strategies
-    account[0] = start_val
-    benchmark_account[0] = start_val
-    buy_and_hold_account[0] = start_val
-    
-    # TODO implement leverage
-    hold_stock = False
+    buy_and_hold_account[0] = start_val * leverage
+    risk_free_account[0] = start_val * leverage
 
     for i in range(1,len(df)):
+        risk_free_account[i] = risk_free_account[i-1] * (1 + df['EFFR'][i])
+        buy_and_hold_account[i] = buy_and_hold_account[i-1] * (1 + df['Excess Return'][i])
+    
+    df['Risk Free Account'] = risk_free_account - start_val * (leverage - 1)
+    df['Buy and Hold Account'] = buy_and_hold_account - start_val * (leverage - 1)
+    
+    return df
 
-        # buy signal
-        if -1 < df['Excess Return Standardized'][i-1] and not hold_stock: # df['GP'][i-1] + df['GP Std Dev'][i-1]
-            gp_signal[i] = 1
-            hold_stock = True
+
+def bollinger_band_strategy(df, col='SPY', start_val = 2*(10**5), leverage=5, drop_lim = -0.02, window=20, sigma=2):
+    """
+    Buys and sells SPY stock based on the bollinger band strategy.
+    If the price is below the lower band, buy.
+    If the price is above the upper band, sell.
+    """
+    
+    df = data.bollinger_bands(df, col=col, window=window, sigma=sigma)
+
+    hold_stock = False
+
+    signal = np.zeros(len(df))
+    position = np.zeros(len(df))
+    account = np.zeros(len(df))
+
+    account[0] = start_val
+  
+    money_owed = 0
+    trade_amount_list = [0]
+
+    for i in range(1,len(df)):
         
-        # sell signal
-        elif 1 > df['Excess Return Standardized'][i-1] and hold_stock: # df['GP'][i-1]- df['GP Std Dev'][i-1] 
-            gp_signal[i] = -1
-            hold_stock = False
+        # buy signal 
+        if df[col][i-1] < df['BB Lower'][i-1] and not hold_stock:
+            signal[i] = 1
+            hold_stock = True
+            trade_amount = account[i-1] * leverage
+            money_owed = account[i-1] * (leverage - 1)
 
-        if  hold_stock:
-            account[i] = account[i-1] * ( 1 + df['Excess Return'][i] )
+        # sell signal (stop loss or bb upper)
+        elif ( df[col][i-1] > df['BB Upper'][i-1] or df['Price Change'][i] < drop_lim ) and hold_stock:
+            signal[i] = -1
+            hold_stock = False
+            money_owed = 0
+        
+        if hold_stock:
+            position[i] = 1
+            money_owed = money_owed * (1 + df['EFFR'][i])
+            trade_amount = trade_amount * (1 +  df['Excess Return'][i] )
+            account[i] = trade_amount  - money_owed
+
         else:
             account[i] = account[i-1] * ( 1 + df['EFFR'][i])
         
+        try:
+            trade_amount_list.append(trade_amount)
         
+        except UnboundLocalError:
+            trade_amount_list.append(0)
         
-        benchmark_account[i] = benchmark_account[i-1] * ( 1 + df['EFFR'][i] )
-        buy_and_hold_account[i] = buy_and_hold_account[i-1] * ( 1 + df['Excess Return'][i] )
+
+    df['Account BB'] = account - money_owed
+    df['Signal BB'] = signal
+    df['Position BB'] = position
+    df['Leverage BB'] = np.array(trade_amount_list / account) - 1
+    df['Trade Amount BB'] = np.array(trade_amount_list)
+    df['Theta BB'] = np.array([df['Account'][i] if df['Position'][i] == 1 else 0 for i in range(len(df))])
+
+    return df
+
+def momentum_strategy(df, col='SPY', start_val=2*(10**5), leverage=5, window='20', sigma=2):
+    """
+    A momentum trading strategy that incorporates leverage.
     
-    df['Account'] = account
-    df['Risk Free Account'] = benchmark_account
-    df['Buy and Hold Account'] = buy_and_hold_account
-    df['Signal'] = gp_signal
+    Parameters:
+    df (pandas.DataFrame): A DataFrame containing the price data for the stock
+    col (str): The column containing the price data
+    start_val (float): The amount of unlevered capital to start with
+    leverage (float): The amount of leverage to use in the strategy
+    window (str): The window for the moving average calculation
+    sigma (float): The standard deviation multiplier for the moving average
+    
+    Returns:
+    pandas.DataFrame: A DataFrame containing the input data as well as the
+                      signal, position, account value, leverage, and theta columns.
+    """
+    
+    df = data.moving_averages(df, col)
+    
+    if window == '10':
+        ma_col = f'10 MA {col}'
+    elif window == '20':
+        ma_col = f'20 MA {col}'
+    else:
+        ma_col = f'30 MA {col}' 
 
-    return df  
+    hold_stock = False
+    
+    signal = np.zeros(len(df))
+    position = np.zeros(len(df))
+    account = np.zeros(len(df))
+    theta = np.zeros(len(df))
 
+    account[0] = start_val 
+
+    short_val = 0
+    short_val_start = 0  # Keep track of the short value when signal is -1
+    
+    for i in range(1, len(df)):
+        # buy signal
+        if (df[col][i-1] > df[ma_col][i-1] + sigma) and hold_stock == False:
+            signal[i] = 1
+            hold_stock = True
+
+            # if we were in short position, recover the short
+            if short_val > 0:
+                account[i] = account[i-1] + (short_val - short_val_start)
+                short_val = 0
+                short_val_start = 0
+            
+            trade_amount =  account[i-1] * leverage
+            theta[i-1] = trade_amount
+
+        # short signal
+        elif (df[col][i] < df[ma_col][i] - sigma ) and hold_stock == True:
+            signal[i] = -1
+            position[i] = -1
+            hold_stock = False
+            theta[i] = account[i-1] * leverage
+
+        if hold_stock:
+            theta[i] = theta[i-1] *( 1  +  df['Excess Return'][i] )               
+            account[i] = theta[i] - theta[i-1] + account[i-1]
+            position[i] = 1
+        
+        else:
+            if short_val_start == 0:
+                short_val_start = theta[i]
+                short_val = short_val_start
+            else:
+                short_val = short_val * (1 + df['Excess Return'][i])   
+            
+            account[i] = account[i-1] * (1 + df['EFFR'][i])
+
+
+    df['Signal Momentum'] = signal
+    df['Position Momentum'] = position
+    df['Account Momentum'] = account
+    df['Theta Momentum'] = np.array([theta[i] * position[i] for i in range(len(df))])
+
+    return df
