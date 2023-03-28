@@ -9,8 +9,8 @@ def cross_val_bollinger_band_strategy(df):
         for sigma in [1,2,3,4]:
             for drop_lim in [-0.01, -0.02, -0.03, -0.04, -0.05]:
                 df = bollinger_band_strategy(df, window=window, sigma=sigma, drop_lim=drop_lim)
-                if df['Account'].iloc[-1] > best_acc:
-                    best_acc = df['Account'].iloc[-1]
+                if df['Account BB'].iloc[-1] > best_acc:
+                    best_acc = df['Account BB'].iloc[-1]
                     best_window = window
                     best_sigma = sigma
                     best_drop_lim = drop_lim
@@ -29,10 +29,10 @@ def cross_val_momentum_strategy(df):
     for window in [10,20,30]:
         for sigma in [0, 0.05, 0.5, 1,2,3]:
             df_new = momentum_strategy(df, window=window, sigma=sigma)
-            if df_new['Account'].iloc[-1] > best_acc:
+            if df_new['Account Momentum'].iloc[-1] > best_acc:
                 best_window = window
                 best_sigma = sigma
-                best_acc = df_new['Account'].iloc[-1]
+                best_acc = df_new['Account Momentum'].iloc[-1]
     
     print(f'Best window: {best_window}')
     print(f'Best sigma: {best_sigma}')

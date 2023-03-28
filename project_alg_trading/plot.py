@@ -118,22 +118,106 @@ def plot_strategy(df):
     plt.legend()
     plt.show()
 
-def plot_margin_bollinger_strategy(df):
-    plt.rcParams["figure.figsize"] = (20,5)
-    plt.fill_between(x = df.index, 
-                    y1 = df['Account'],
-                    y2 = - (df['Account']), 
-                    color = 'purple',
-                    alpha=0.2,
-                    label='$[-V_t \cdot L, V_t \cdot L]$')
-    mask_buy = df['Signal'] == 1
-    mask_sell = df['Signal'] == -1
+def plot_margin(df, strategy = 'BB', leverage = 5):
+    """ 
+    Plot the margins account value * leverage
 
-    plt.scatter(df[mask_buy].index, df[mask_buy]['Account'], marker='^', color='green', label='Buy', s=15, alpha=0.4)
-    plt.scatter(df[mask_sell].index, df[mask_sell]['Account'], marker='v', color='red', label='Sell', s=15, alpha=0.4)
+    Args:
+        df (pd.DataFrame): data frame with account values
+        strategy (str): specifies the strategy to plot
+        leverage (int): specifies the leverage used in the strategy
 
-    plt.plot(df['Theta'], label='$\\theta_t$')
+    """
+    
+    account = f'Account {strategy}'
+    signal = f'Signal {strategy}'
+    theta = f'Theta {strategy}'
+    
+    plt.rcParams['figure.figsize'] = (20,5)
+    plt.fill_between(x = df.index,
+                     y1 = leverage * df[account],
+                     y2 = - leverage * df[account],
+                     color = 'purple',
+                     alpha = 0.2,
+                     label = '$[ - V_t \cdot L, V_t \cdot L]$')
+    
+    plt.plot(df[theta], label = '$\\theta_t$')
+    
+    mask_buy = df[signal] == 1
+    mask_sell = df[signal] == -1
+
+    plt.scatter(df[mask_buy].index, 
+                df[mask_buy][theta], 
+                marker='^',
+                color = 'green',
+                label = 'Buy / Short Close',
+                s=15,
+                alpha = 0.5)
+    
+    plt.scatter(df[mask_sell].index, 
+                df[mask_sell][theta], 
+                marker='v',
+                color = 'red',
+                label = 'Sell / Short',
+                s=15,
+                alpha = 0.5)
+    
     plt.legend()
-    plt.title('Long Full Leverage Strategy')
+    plt.show()
 
+def plot_delta_V(pnl, delta_v, delta_vcap):
+    """
+    Plots the change in return and its accumulated return over time.
+    """
+    fig, ax = plt.subplots(2, 1)
+    ax[0].plot(pnl, 
+            linestyle = '-.',
+            label = 'PnL')
+    ax[0].plot(delta_v, 
+            linestyle = '--',
+            label = '$\Delta V_t$')
+    ax[0].plot(delta_vcap, label = '$\Delta V_t^{cap}$')
+
+    ax[0].legend()
+
+    
+    ax[1].plot(pnl.cumsum(), 
+            linestyle = '-.',
+            label = '$\sum$ PnL')
+    ax[1].plot(delta_v.cumsum(), 
+            linestyle = '--',
+            label = '$\sum \Delta V_t$')
+    ax[1].plot(delta_vcap.cumsum(), label = '$\sum \Delta V_t^{cap}$')
+
+    ax[1].legend()
+
+    plt.show()
+
+# TODO make it so the three strategies are plotted together
+def plot_drawdown(pnl):
+
+    plt.plot(pnl / (pnl.cummax() -1), label = '$DD_t$')
+    plt.show()
+
+def plot_sharpe_ratio(df):
+    """
+    
+    """
+    
+    strategies = [col[7:] if col[:7] == 'Account' else '' for col in df.columns]
+    strategies = strategies[strategies != '']
+
+    for strategy in strategies:
+        plt.scatter(df[f'PnL {strategy}'].mean(), df[f'PnL {strategy}'].std(), label = strategy)
+    
+    plt.scatter(df['Excess Return'].mean(), df['Excess Return'].std(), label='SPDR')
+    plt.title('Sharpe Ratio')
+    plt.xlabel('$\mu$')
+    plt.ylabel('$\sigma$')
+
+
+    
+    
+    
+    
 

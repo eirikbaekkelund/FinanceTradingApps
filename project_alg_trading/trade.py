@@ -35,11 +35,11 @@ def bollinger_band_strategy(df, col='SPY', start_val = 2*(10**5), leverage=5, dr
     signal = np.zeros(len(df))
     position = np.zeros(len(df))
     account = np.zeros(len(df))
+    theta = np.zeros(len(df))
 
     account[0] = start_val
   
     money_owed = 0
-    trade_amount_list = [0]
 
     for i in range(1,len(df)):
         
@@ -47,37 +47,26 @@ def bollinger_band_strategy(df, col='SPY', start_val = 2*(10**5), leverage=5, dr
         if df[col][i-1] < df['BB Lower'][i-1] and not hold_stock:
             signal[i] = 1
             hold_stock = True
-            trade_amount = account[i-1] * leverage
-            money_owed = account[i-1] * (leverage - 1)
+            theta[i-1] = account[i-1] * leverage
 
         # sell signal (stop loss or bb upper)
         elif ( df[col][i-1] > df['BB Upper'][i-1] or df['Price Change'][i] < drop_lim ) and hold_stock:
             signal[i] = -1
             hold_stock = False
-            money_owed = 0
         
         if hold_stock:
             position[i] = 1
-            money_owed = money_owed * (1 + df['EFFR'][i])
-            trade_amount = trade_amount * (1 +  df['Excess Return'][i] )
-            account[i] = trade_amount  - money_owed
+            theta[i] = theta[i-1] * (1 +  df['Excess Return'][i] )
+            account[i] = account[i-1]  + (theta[i] - theta[i-1])
 
         else:
             account[i] = account[i-1] * ( 1 + df['EFFR'][i])
-        
-        try:
-            trade_amount_list.append(trade_amount)
-        
-        except UnboundLocalError:
-            trade_amount_list.append(0)
-        
-
+    
+    
     df['Account BB'] = account - money_owed
     df['Signal BB'] = signal
     df['Position BB'] = position
-    df['Leverage BB'] = np.array(trade_amount_list / account) - 1
-    df['Trade Amount BB'] = np.array(trade_amount_list)
-    df['Theta BB'] = np.array([df['Account'][i] if df['Position'][i] == 1 else 0 for i in range(len(df))])
+    df['Theta BB'] = np.array([df['Account BB'][i] * position[i] for i in range(len(df))])
 
     return df
 
@@ -131,8 +120,7 @@ def momentum_strategy(df, col='SPY', start_val=2*(10**5), leverage=5, window='20
                 short_val = 0
                 short_val_start = 0
             
-            trade_amount =  account[i-1] * leverage
-            theta[i-1] = trade_amount
+            theta[i-1] = account[i-1] * leverage
 
         # short signal
         elif (df[col][i] < df[ma_col][i] - sigma ) and hold_stock == True:

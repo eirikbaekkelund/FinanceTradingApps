@@ -1,84 +1,39 @@
 import numpy as np
 # TODO implement column names as parameters
 
-def turnover_dollars(df):
-    """
-    Calculates the turnover in dollars.
-    """
-    df = df[(df['Position'] == 1) | (df['Position'] == -1)]
-    turnover = df['Theta'].diff().sum()
-    return turnover
-
-def turnover_units(df):
-    """
-    Calculates the turnover in units.
-    """
-    df = df[df['Theta'] != 0]
-    df = df.reset_index(drop=True)
-    turnover_units = np.sum([ abs( df['Theta'][i+1] / df['SPY'][i+1] - df['Theta'][i] / df['SPY'][i] ) for i in range(len(df)-1)])
-    return turnover_units
-
-
-def delta_value(df):
-    """
-    Calculates the change in value of the portfolio.
-    """
-    delta_v = df['Excess Return'] * df['Theta']
-    return delta_v
-
-def delta_cap(df, leverage_limit=5):
-    """
-    Calculates the capped change in value of the portfolio by 
-    the leverage limit.
-    """
-    delta_v_total = df['Account']
-    M = df['Theta'].abs() / leverage_limit
-    delta_v_cap = (delta_v_total - M) * df['EFFR']
-
-    return delta_v_cap
-
-def delta_total_value(df):
-    """
-    Calculates the total change in value of the portfolio.
-    """
-    delta_v = delta_value(df)
-    delta_v_cap = delta_cap(df)
-    delta_v_total =  delta_v + delta_v_cap
-    return delta_v_total
-
-def sharpe_ration(df):
+def sharpe_ratio(pnl):
     """
     Calculates the sharpe ratio of the portfolio.
     """
-    delta_v_total = delta_total_value(df)
-    sharpe_ratio = delta_v_total.mean() / delta_v_total.std()
-    return sharpe_ratio
+    return pnl.mean() / pnl.std()
 
-def sortino_ratio(df):
+def sortino_ratio(pnl):
     """
     Calculates the sortino ratio of the portfolio.
     """
-    delta_v_total = delta_total_value(df)
-    sortino_ratio = delta_v_total.mean() / delta_v_total[delta_v_total < 0].std()
-    return sortino_ratio
+    return pnl.mean() / pnl[ pnl < 0 ].std()
 
-def max_drawdown(df):
+# TODO verify max drawdown
+def max_drawdown(pnl):
     """
     Calculates the maximum drawdown of the portfolio.
     """
-    max_drawdown = (df['Account'] / df['Account'].cummax() - 1).min()
-    return max_drawdown
+    return (pnl / (pnl.cummax() - 1) ) .min()
 
-def calmar_ratio(df):
+def calmar_ratio(pnl):
     """
-    Calculates the calmar ratio of the portfolio.
+    Calculates the calmar ratio of the portfolio
     """
-    calmar_ratio = sharpe_ration(df) / max_drawdown(df)
-    return calmar_ratio
+    return sharpe_ratio(pnl) / max_drawdown(pnl)
 
-def excess_return_account(df):
+def mean_return(pnl):
     """
-    Calculates the excess return of the portfolio.
+    Calculates the mean return of the portfolio trades
     """
-    excess_return = df['Excess Return'] * df['Theta']
-    return excess_return
+    return pnl.mean()
+
+def median_return(pnl):
+    """
+    Calculates the median return of the portfolio of trades
+    """
+    return pnl.median()
