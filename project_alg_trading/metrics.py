@@ -1,4 +1,3 @@
-import numpy as np
 # TODO implement column names as parameters
 
 def sharpe_ratio(pnl):
@@ -14,17 +13,27 @@ def sortino_ratio(pnl):
     return pnl.mean() / pnl[ pnl < 0 ].std()
 
 # TODO verify max drawdown
-def max_drawdown(pnl):
+def max_drawdown_percent(df, strategy = 'BB'):
     """
-    Calculates the maximum drawdown of the portfolio.
+    Calculates the drawdown of the account.
     """
-    return (pnl / (pnl.cummax() - 1) ) .min()
+    account = f'Account {strategy}'
+    
+    drawdown =  df[account].div(df[account].cummax()).sub(1) * 100
+    return abs(drawdown.min())
 
-def calmar_ratio(pnl):
+def max_drawdown(df, strategy = 'BB'):
+    """
+    Calculates the max drawdown of the portfolio
+    """
+    return max_drawdown_percent(df, strategy) / 100
+
+def calmar_ratio(df, strategy = 'BB'):
     """
     Calculates the calmar ratio of the portfolio
     """
-    return sharpe_ratio(pnl) / max_drawdown(pnl)
+    excess_return = df[f'Pct Change {strategy}'].mean()
+    return excess_return / max_drawdown(df, strategy)
 
 def mean_return(pnl):
     """

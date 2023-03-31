@@ -128,6 +128,7 @@ def plot_margin(df, strategy = 'BB', leverage = 5):
         leverage (int): specifies the leverage used in the strategy
 
     """
+    # TODO make axes labels and title dynamic for different strategies
     
     account = f'Account {strategy}'
     signal = f'Signal {strategy}'
@@ -142,33 +143,33 @@ def plot_margin(df, strategy = 'BB', leverage = 5):
                      label = '$[ - V_t \cdot L, V_t \cdot L]$')
     
     plt.plot(df[theta], label = '$\\theta_t$')
-    
-    mask_buy = df[signal] == 1
-    mask_sell = df[signal] == -1
+    try:
+        mask_buy = df[signal] == 1
+        mask_sell = df[signal] == -1
 
-    plt.scatter(df[mask_buy].index, 
-                df[mask_buy][theta], 
-                marker='^',
-                color = 'green',
-                label = 'Buy / Short Close',
-                s=15,
-                alpha = 0.5)
-    
-    plt.scatter(df[mask_sell].index, 
-                df[mask_sell][theta], 
-                marker='v',
-                color = 'red',
-                label = 'Sell / Short',
-                s=15,
-                alpha = 0.5)
-    
+        plt.scatter(df[mask_buy].index, 
+                    df[mask_buy][theta], 
+                    marker='^',
+                    color = 'green',
+                    label = 'Buy / Short Close',
+                    s=15,
+                    alpha = 0.5)
+        
+        plt.scatter(df[mask_sell].index, 
+                    df[mask_sell][theta], 
+                    marker='v',
+                    color = 'red',
+                    label = 'Sell / Short',
+                    s=15,
+                    alpha = 0.5)
+    except KeyError:
+        print('Portfolio is diversified, contradicting signals are not plotted.')
+        
     plt.legend()
     plt.show()
 
-def plot_delta_V(pnl, delta_v, delta_vcap):
-    """
-    Plots the change in return and its accumulated return over time.
-    """
+def plot_delta_V(pnl, delta_v, delta_vcap, strategy = 'BB'):
+    # TODO make axes labels and title dynamic for different strategies
     fig, ax = plt.subplots(2, 1)
     ax[0].plot(pnl, 
             linestyle = '-.',
@@ -191,13 +192,12 @@ def plot_delta_V(pnl, delta_v, delta_vcap):
 
     ax[1].legend()
 
+    plt.suptitle(f'PnL and $\Delta V$ for {strategy} Strategy')
     plt.show()
 
-# TODO make it so the three strategies are plotted together
-def plot_drawdown(pnl):
-
-    plt.plot(pnl / (pnl.cummax() -1), label = '$DD_t$')
-    plt.show()
+# TODO make it so the three strategies are plotted together for drawdown and sharpe ratios
+def plot_drawdown(df):
+    pass
 
 def plot_sharpe_ratio(df):
     """

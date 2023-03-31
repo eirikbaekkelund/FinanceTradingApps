@@ -1,5 +1,5 @@
 from trade import bollinger_band_strategy, momentum_strategy
-
+import numpy as np
 def cross_val_bollinger_band_strategy(df):
     """
     Cross validates the bollinger band strategy.
@@ -7,7 +7,7 @@ def cross_val_bollinger_band_strategy(df):
     best_acc = 0
     for window in [5, 10, 20, 30]:
         for sigma in [1,2,3,4]:
-            for drop_lim in [-0.01, -0.02, -0.03, -0.04, -0.05]:
+            for drop_lim in np.linspace(0,0.1,20):#[-0.01, -0.02, -0.03, -0.04, -0.05]:
                 df = bollinger_band_strategy(df, window=window, sigma=sigma, drop_lim=drop_lim)
                 if df['Account BB'].iloc[-1] > best_acc:
                     best_acc = df['Account BB'].iloc[-1]
@@ -19,7 +19,9 @@ def cross_val_bollinger_band_strategy(df):
     print('Best sigma: ', best_sigma)
     print('Best drop limit: ', best_drop_lim)
     
-    return best_acc, best_window, best_sigma, best_drop_lim
+    df = bollinger_band_strategy(df, window=best_window, sigma=best_sigma, drop_lim=best_drop_lim)
+    
+    return df, best_window, best_sigma, best_drop_lim
 
 def cross_val_momentum_strategy(df):
 
@@ -27,7 +29,7 @@ def cross_val_momentum_strategy(df):
     best_window = 0
     best_sigma = 0
     for window in [10,20,30]:
-        for sigma in [0, 0.05, 0.5, 1,2,3]:
+        for sigma in np.linspace(0,3,20): # [0, 0.05, 0.5, 1,2,3]:
             df_new = momentum_strategy(df, window=window, sigma=sigma)
             if df_new['Account Momentum'].iloc[-1] > best_acc:
                 best_window = window

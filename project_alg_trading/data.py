@@ -30,10 +30,9 @@ def get_data(file_name='effr.xlsx'):
 
     df_rf = df_rf.iloc[::-1]
         
-    # convert percentage to decimal
-    df_rf = df_rf/100
-    # convert annual rate to daily rate
-    df_rf = df_rf/252
+    # convert percentage to decimal and annual rate to daily rate
+    df_rf = df_rf / (100 * 252 )
+ 
 
     # rename columns
     df_rf.columns = [col[:-4] for col in df_rf.columns]
