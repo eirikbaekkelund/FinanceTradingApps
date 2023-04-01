@@ -1,4 +1,4 @@
-# TODO implement column names as parameters
+import numpy as np
 
 def sharpe_ratio(pnl):
     """
@@ -28,12 +28,46 @@ def max_drawdown(df, strategy = 'BB'):
     """
     return max_drawdown_percent(df, strategy) / 100
 
-def calmar_ratio(df, strategy = 'BB'):
+def drawdown_value(df, strategy='BB'):
     """
-    Calculates the calmar ratio of the portfolio
+    Calculates the drawdown of the account.
     """
-    excess_return = df[f'Pct Change {strategy}'].mean()
-    return excess_return / max_drawdown(df, strategy)
+    account = f'Account {strategy}'
+    
+    return df[account].sub(df[account].cummax())
+
+def drawdown_percent(df, strategy='BB'):
+    """
+    Calculates the drawdown of the account.
+    """
+    account = f'Account {strategy}'
+    
+    return df[account].div(df[account].cummax()).sub(1) * 100
+
+def compunded_rate(df, strategy='BB'):
+    """
+    Calculates the Calmar ratio of the account.
+    """
+
+    compounded_return = (1 + df[f'Pct Change {strategy}']).cumprod()
+    cr = compounded_return.iloc[-1]
+    
+    return cr 
+
+def calmar_ratio(df, strategy='BB'):
+    """
+    Calculates the Calmar ratio of the account.
+    """
+
+    compounded_return = (1 + df[f'Pct Change {strategy}']).cumprod()
+    cr = compounded_return.iloc[-1]
+    dd = drawdown_value(df, strategy=strategy)
+    
+    max_dd = dd.min()
+    print(max_dd)
+    calmar = cr / abs(max_dd)
+    
+    return calmar
 
 def mean_return(pnl):
     """
@@ -46,3 +80,14 @@ def median_return(pnl):
     Calculates the median return of the portfolio of trades
     """
     return pnl.median()
+
+def tracking_error(asset_return, portfolio_return, benchmark_return, risk_free_return):
+    """
+    Calculates the tracking error of the portfolio.
+    """
+# calculate excess returns of the asset over the risk-free rate
+    asset_excess_return = asset_return - risk_free_return
+
+    # calculate the excess return of the portfolio over the benchmark
+    portfolio_excess_return = portfolio_return - benchmark_return
+    return np.sqrt(np.sum((asset_excess_return - portfolio_excess_return) ** 2) / (len(asset_return) - 1))
