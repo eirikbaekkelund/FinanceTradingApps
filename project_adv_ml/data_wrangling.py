@@ -176,181 +176,124 @@ def remove_missing_ground_truth(df, thresh_proportion=0.4):
                 df = df[df['ticker'] != tic]
     return df
 
-def linear_least_squares( df, plot=False, col='nw_total_sales_b_total'):
+def impute_least_squares(df, company, column):
     """ 
+    Imputes missing values in a column of a dataframe by OLS.
+
+    Args:
+        df (pd.DataFrame): dataframe of the entire dataset
+        company (str): company ticker
+        column (str): column for which the missing values are imputed
     
+    Returns:
+        df (pd.DataFrame): dataframe with imputed values
     """
-    df_copy = df.copy()
-    # dropping stationary / mutual information / non-numeric columns
-    # this is very manual and could be improved
-    df_copy = df_copy.drop(['month', 'ticker', 'mic', 'time'], axis=1)
-    
-    nan_rows = df_copy[df_copy[col].isna()]
-    value_rows = df_copy[~df_copy[col].isna()]
-    
-    X, y = value_rows.drop(col, axis=1), value_rows[col]
-    
-    X['bias'] = np.ones(X.shape[0])
-    
+    # get the subset of the dataframe which contains the company rows
+    df_company = df[df['ticker'] == company]
+    # get the index of the nan values
+    nan_index = df_company[df_company[column].isna()].index
+    # get the values of the other columns
+    non_nan_index = df_company[df_company[column].notna()].index
+    # create the X and y from the non nan values
+    X = df_company.loc[non_nan_index, ['nw_total_sales_a_total', 'Sales_Estimate_fiscal', 'Sales_Actual_fiscal']]
+    y = df_company.loc[non_nan_index, column]
+    # add bias term to X
+    X = np.concatenate((np.ones((X.shape[0], 1)), X), axis=1)
+    # get the coefficients
     weights = np.linalg.lstsq(X, y, rcond=None)[0]
-    
-    nan_rows = nan_rows.drop(col, axis=1)
-    nan_rows['bias'] = np.ones(nan_rows.shape[0])
-    
-    new_vals = nan_rows @ weights
-    
-    df.loc[nan_rows.index, col] = new_vals
-    
-    if plot:
-        plt.scatter(nan_rows.index, new_vals, label='Imputed Values', marker='x', color='red', alpha=.8)
-        plt.scatter(y.index, y, label='Actual Values', marker='o', color='blue', alpha=.8)
-        plt.plot(df.index, df[col], label='Concatenated', color='black', linestyle='--', alpha=0.5)
-        plt.title(f"Company: {df['ticker'].unique()[0]}, column: {col}")
-        plt.legend()
-        plt.show()
-        
-    return df
-
-
-def get_nan_indices( df, ticker, col):
-    """
-    
-    """
-    df_copy = df[df['ticker'] == ticker]
-    original_index = df_copy.index
-    df_copy = df_copy.reset_index(drop=False)
-    nan_indices = df_copy[df_copy[col].isnull()].index.tolist()
-
-    return df_copy, original_index, nan_indices
-
-def least_square_imputation( df, df_copy, tic, original_index, plot=False, col='nw_total_sales_b_total'):
-    """
-    
-    """
-    df_copy = linear_least_squares(df_copy, plot=plot, col=col)
-    df_copy = df_copy.set_index(original_index)
-    df.loc[df['ticker'] == tic,col] = df_copy[col]
+    # predict the values for the nan values
+    X_nan = df_company.loc[nan_index, ['nw_total_sales_a_total', 'Sales_Estimate_fiscal', 'Sales_Actual_fiscal']]
+    X_nan = np.concatenate((np.ones((X_nan.shape[0], 1)), X_nan), axis=1)
+    y_pred = np.dot(X_nan, weights)
+    # replace the nan values with the predicted values
+    df.loc[nan_index, column] = y_pred
 
     return df
-    
-    
-def impute_nans_singular_column( df, col='nw_total_sales_b_total',plot=False, max_plots=10):
+
+def impute_normal_sample(df, company, column):
     """ 
+    Imputes missing values in a column of a dataframe by sampling from a normal distribution.
+
+    Args:
+        df (pd.DataFrame): dataframe of the entire dataset
+        company (str): company ticker
+        column (str): column for which the missing values are imputed
     
+    Returns:
+        df (pd.DataFrame): dataframe with imputed values
     """
+    assert column in ['Sales_Actual_fiscal', 'Sales_Estimate_fiscal']
+
+    if column == 'Sales_Actual_fiscal':
+        column_estimate = 'Sales_Estimate_fiscal'
+    else:
+        column_estimate = 'Sales_Actual_fiscal'
     
-    assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
+    # get the subset of the dataframe which contains the company rows
+    df_company = df[df['ticker'] == company]
+    # get the index of the nan values
+    nan_index = df_company[df_company[column].isna()].index
+    # get the values of the other columns
+    non_nan_index = df_company[df_company[column].notna()].index
+    
+    # get the y estimate values at the nan index
+    y_estimate = df_company.loc[nan_index, column_estimate]
+    print(y_estimate, nan_index)
+    # get the standard deviation as the difference between the estimate and the actual at the non nan index
+    std = np.std(df_company.loc[non_nan_index, column] - df_company.loc[non_nan_index, column_estimate])
+    y_pred = np.random.multivariate_normal(y_estimate, std * np.eye(len(y_estimate)) )
+    # replace the nan values with the predicted values
+    df.loc[nan_index, column] = y_pred
 
-    n_plots = 0
-    nan_companies = get_nan_columns(df)
+    return df
 
-    # TODO make more efficient?
-    for tic in nan_companies.keys():
+def impute_values(df):
+    # get the list of companies with nan values
+    nan_companies = dw.get_nan_columns(df)
+    company_list_panel_B = nan_companies['nw_total_sales_b_total']
+    company_list_panel_A = nan_companies['nw_total_sales_a_total']
 
-        if set(nan_companies[tic]) == set([col]):
-            df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=col)
-            
-            if set(nan_indices) == set([0,1,2]) or set(nan_indices) == set([0,1,2,3]) or set(nan_indices) == set([0,1]) or set(nan_indices) == set([0]) or len(nan_indices) <= 5:
-                df = least_square_imputation(df, df_copy, tic, original_indices, plot=plot)
-                n_plots += 1
-                if n_plots == max_plots:
-                    plot = False
+    company_list_sales_actual = nan_companies['Sales_Actual_fiscal']
+    company_list_sales_estimated = nan_companies['Sales_Estimate_fiscal']
+
+    company_list = company_list_panel_B + company_list_panel_A + company_list_sales_actual + company_list_sales_estimated
+    company_list = list(set(company_list))
+
+
+    for company in company_list:
+        # check if is in set b and not in actual, estimated, and a
+        if company in company_list_panel_B and company not in company_list_sales_actual and company not in company_list_sales_estimated and company not in company_list_panel_A:
+            df = impute_least_squares(df, company, 'nw_total_sales_b_total')
+        # check if is in set a and not in set b, actual and estimated
+        elif company in company_list_panel_A and company not in company_list_panel_B and company not in company_list_sales_actual and company not in company_list_sales_estimated:
+            df = impute_least_squares(df, company, 'nw_total_sales_a_total')
+        
+        # check if is in actual and not in estimated
+        elif company in company_list_sales_actual and company not in company_list_sales_estimated:
+            df = impute_normal_sample(df, company, 'Sales_Actual_fiscal')
+        
+        # check if is in estimated and not in actual
+        elif company in company_list_sales_estimated and company not in company_list_sales_actual:
+            df = impute_normal_sample(df, company, 'Sales_Estimate_fiscal')
     
     return df
 
-
-def replace_sales( df, tic, company_list, plot, proportion, col_actual='Sales_Actual_fiscal', col_estimate = 'Sales_Estimate_fiscal'):
+def run_imputation(df):
     """ 
+    Iteratively imputes missing values in a dataframe.
+
+    Args:
+        df (pd.DataFrame): dataframe of the entire dataset
     
+    Returns:
+        df (pd.DataFrame): dataframe with imputed values
     """
-    def get_index_sets(df_idx, ticker, col_act, col_est):
-        """ 
+    while True:
+        n_nans = df.isna().sum().sum()
+        df = impute_values(df)
+        if n_nans == df.isna().sum().sum():
+            return df
         
-        """
-        _, _, nan_indice_actual = get_nan_indices(df_idx, ticker, col=col_act)
-        _, _, nan_indices_estimate = get_nan_indices(df_idx, ticker, col=col_est)
-        actual_set, estimate_set = set(nan_indice_actual), set(nan_indices_estimate)
-        
-        return actual_set.difference(estimate_set), estimate_set.difference(actual_set), actual_set.intersection(estimate_set)
-    
-    actual_not_estimate, estimate_not_actual, actual_and_estimate = get_index_sets(df, tic, col_actual, col_estimate)
-    
-    # replace NaNs with normals when one column has values and the other doesn't
-    
-    if len(actual_not_estimate) != 0 or len(estimate_not_actual) != 0:
-        mean_abs_diff = np.mean(abs(df[col_actual] - df[col_estimate]))
-        std_dev = np.sqrt(mean_abs_diff)
-
-        for col in [col_estimate, col_actual]:
-            mask = df[col].isna()
-            other_col = col_estimate if col == col_actual else col_actual
-            df.loc[mask, col] = np.random.normal(df[other_col][mask], std_dev, size=(mask.sum(),))
-    
-
-    # TODO Nearest Neighbor related for this scenario
-    if len(actual_and_estimate) != 0 and set(company_list) == set([col_actual, col_estimate]):
-        
-        window = len(actual_and_estimate) + 2
-        rolling_mean_actual = df[col_actual].rolling(window, min_periods=1).mean()
-        rolling_mean_estimate = df[col_estimate].rolling(window, min_periods=1).mean()
-            
-        if 0 in actual_and_estimate or 1 in actual_and_estimate:    
-            df[col_estimate] = df[col_estimate].fillna(rolling_mean_actual).bfill()
-        else:
-            df[col_estimate] = df[col_estimate].fillna(rolling_mean_estimate).ffill()
-        
-        df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=col_actual)
-        if len(original_indices) / len(nan_indices) < proportion:
-            df = least_square_imputation(df, df_copy, tic, original_indices, plot=plot, col=col_actual)
-    
-    return df
-
-def fiscal_sales_imputation(df, plot=False, proportion=0.35,col_actual = 'Sales_Actual_fiscal', col_estimate= 'Sales_Estimate_fiscal', n_sales_a = 'nw_total_sales_a_total', n_sales_b = 'nw_total_sales_b_total'):
-    """ 
-    
-    """
-    # TODO make more efficient?
-    nan_companies = get_nan_columns(df)
-
-    for tic, company_list in nan_companies.items():
-        
-        if col_actual in company_list or col_estimate in company_list:
-            df.loc[df['ticker'] == tic, :] = replace_sales(df, tic, company_list, plot=plot, proportion=proportion)
-            df_copy = df[df['ticker'] == tic]
-            
-            if df_copy[col_estimate].isna().sum() == 0:
-                
-                if set(nan_companies[tic]) == set([col_actual, n_sales_a]):
-                    df_less_nans = df_copy.drop(col_actual, axis=1)
-                    _, original_indices, nan_indices = get_nan_indices(df, tic, col=n_sales_a)
-                    df = least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_a)
-                
-                elif set(nan_companies[tic]) == set([col_actual, n_sales_b]):
-                    df_less_nans = df_copy.drop(col_actual, axis=1)
-                    _, original_indices, nan_indices = get_nan_indices(df, tic, col=n_sales_b)
-                    
-                    if len(original_indices) /len(nan_indices) <= proportion:
-                        df = least_square_imputation(df, df_less_nans, tic, original_indices, plot=plot, col=n_sales_b)
-    
-    return df
-
-def impute_singular_nan_column( df, proportion=0.35, max_plots=10):
-    assert max_plots <= df.shape[0], "cannot generate more plots than datapoints"
-
-    # TODO make more efficient?
-    nan_companines = get_nan_columns(df)
-    n_plots = 0
-    
-    for tic, column_list in nan_companines.items():
-        if len(column_list) == 1:
-            df_copy, original_indices, nan_indices = get_nan_indices(df, tic, col=column_list[0])
-            if len(nan_indices) / len(original_indices) <= proportion:
-                df = least_square_imputation(df, df_copy, tic, original_indices, col=column_list[0],plot=plot)
-                n_plots += 1
-                if n_plots == max_plots:
-                    plot = False
-    return df
-
 def remove_short_series(df, n=9):
     """ 
     
@@ -441,44 +384,70 @@ def rmse_residual_vector(predictions, target):
     """
     return [ np.sqrt( (( target[-1:].data_array().squeeze() - pred[-1:].data_array().squeeze() )**2).to_numpy() ) for target, pred in zip(target, predictions) ]
 
-def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats, preds_train_rf, preds_test_rf, preds_val_rf, preds_train_xgb, preds_test_xgb, preds_val_xgb, train_target, test_target, val_target):
+def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats, 
+            preds_train_rf, preds_test_rf, preds_val_rf, 
+            preds_train_xgb, preds_test_xgb, preds_val_xgb, 
+            train_target, test_target, val_target):
     """
-    Calculate the RMSE of the predictions for each model and each time series.
+    Calculate RMSE for each model and each dataset.
 
     Args:
-        preds_train_nbeats (list): List of TimeSeries of predictions for the NBeats model on the training set.
-        preds_test_nbeats (list): List of TimeSeries of predictions for the NBeats model on the test set.
-        preds_val_nbeats (list): List of TimeSeries of predictions for the NBeats model on the validation set.
-        preds_train_rf (list): List of TimeSeries of predictions for the Random Forest model on the training set.
-        preds_test_rf (list): List of TimeSeries of predictions for the Random Forest model on the test set.
-        preds_val_rf (list): List of TimeSeries of predictions for the Random Forest model on the validation set.
-        preds_train_xgb (list): List of TimeSeries of predictions for the XGBoost model on the training set.
-        preds_test_xgb (list): List of TimeSeries of predictions for the XGBoost model on the test set.
-        preds_val_xgb (list): List of TimeSeries of predictions for the XGBoost model on the validation set.
-        train_target (list): List of TimeSeries of the target values for the training set.
-        test_target (list): List of TimeSeries of the target values for the test set.
-        val_target (list): List of TimeSeries of the target values for the validation set.
-    Returns 
-        df_res (pd.DataFrame): DataFrame with the RMSE of the predictions for each model and each time series.
+        preds_train_nbeats (TimeSeries): TimeSeries of predictions for the train set for the NBEATS model.
+        preds_test_nbeats (TimeSeries): TimeSeries of predictions for the test set for the NBEATS model.
+        preds_val_nbeats (TimeSeries): TimeSeries of predictions for the validation set for the NBEATS model.
+        preds_train_rf (TimeSeries): TimeSeries of predictions for the train set for the Random Forest model.
+        preds_test_rf (TimeSeries): TimeSeries of predictions for the test set for the Random Forest model.
+        preds_val_rf (TimeSeries): TimeSeries of predictions for the validation set for the Random Forest model.
+        preds_train_xgb (TimeSeries): TimeSeries of predictions for the train set for the XGBoost model.
+        preds_test_xgb (TimeSeries): TimeSeries of predictions for the test set for the XGBoost model.
+        preds_val_xgb (TimeSeries): TimeSeries of predictions for the validation set for the XGBoost model.
+        train_target (TimeSeries): TimeSeries of target values for the train set.
+        test_target (TimeSeries): TimeSeries of target values for the test set.
+        val_target (TimeSeries): TimeSeries of target values for the validation set.
+    
+    Returns:
+        df_res (pd.DataFrame): DataFrame with RMSE for each model and each dataset.
     """
-    rmse_res_nbeats_train = rmse_residual_vector(predictions=preds_train_nbeats, target=train_target)
-    rmse_res_nbeats_test = rmse_residual_vector(predictions=preds_test_nbeats, target=test_target)
-    rmse_res_nbeats_val = rmse_residual_vector(predictions=preds_val_nbeats, target=val_target)
-    rmse_res_nbeats = rmse_res_nbeats_train +rmse_res_nbeats_val + rmse_res_nbeats_test
+    def calculate_rmse(predictions, target):
+        return rmse_residual_vector(predictions=predictions, target=target)
 
-    rmse_res_rf_train = rmse_residual_vector(predictions=preds_train_rf, target=train_target)
-    rmse_res_rf_test = rmse_residual_vector(predictions=preds_test_rf, target=test_target)
-    rmse_res_rf_val = rmse_residual_vector(predictions=preds_val_rf, target=val_target)
-    rmse_res_rf = rmse_res_rf_train + rmse_res_rf_test + rmse_res_rf_val
+    models = {
+        'nbeats': {
+            'train': preds_train_nbeats,
+            'test': preds_test_nbeats,
+            'val': preds_val_nbeats,
+        },
+        'rf': {
+            'train': preds_train_rf,
+            'test': preds_test_rf,
+            'val': preds_val_rf,
+        },
+        'xgb': {
+            'train': preds_train_xgb,
+            'test': preds_test_xgb,
+            'val': preds_val_xgb,
+        },
+    }
 
-    rmse_res_xgb_train = rmse_residual_vector(predictions=preds_train_xgb, target=train_target)
-    rmse_res_xgb_test = rmse_residual_vector(predictions=preds_test_xgb, target=test_target)
-    rmse_res_xgb_val = rmse_residual_vector(predictions=preds_val_xgb, target=val_target)
-    rmse_res_xgb = rmse_res_xgb_train + rmse_res_xgb_test + rmse_res_xgb_val 
+    df_res = pd.DataFrame()
 
-    df_res = pd.DataFrame.from_dict({'res_nbeats_train' : rmse_res_nbeats_train, 'res_nbeats_test' : rmse_res_nbeats_test, 'res_nbeats_val' : rmse_res_nbeats_val, 'res_nbeats' : rmse_res_nbeats,
-              'res_rf_train' : rmse_res_rf_train, 'res_rf_test' : rmse_res_rf_test, 'res_rf_val' : rmse_res_rf_val, 'res_rf' : rmse_res_rf,
-              'res_xgb_train' : rmse_res_xgb_train, 'res_xgb_test' : rmse_res_xgb_test, 'res_xgb_val' : rmse_res_xgb_val, 'res_xgb' : rmse_res_xgb}, orient='index')
-    df_res = df_res.transpose()
-
+    for model_name, model_data in models.items():
+        rmse_train = calculate_rmse(model_data['train'], train_target)
+        rmse_test = calculate_rmse(model_data['test'], test_target)
+        rmse_val = calculate_rmse(model_data['val'], val_target)
+        rmse_total = rmse_train + rmse_test + rmse_val
+        
+        model_results = {
+            f'res_{model_name}_train': rmse_train,
+            f'res_{model_name}_test': rmse_test,
+            f'res_{model_name}_val': rmse_val,
+            f'res_{model_name}': rmse_total,
+        }
+        
+        df_res = df_res.append(model_results, ignore_index=True)
+        
+    df_res = df_res[['res_nbeats_train', 'res_nbeats_test', 'res_nbeats_val', 'res_nbeats',
+                    'res_rf_train', 'res_rf_test', 'res_rf_val', 'res_rf',
+                    'res_xgb_train', 'res_xgb_test', 'res_xgb_val', 'res_xgb']]
+    
     return df_res
