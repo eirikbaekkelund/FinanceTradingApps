@@ -374,24 +374,21 @@ def encode_float(df, col):
 
     return df, inv_mapper
 
-def rmse_residual_vector(predictions, target):
-    """
-    Calculate elementwise difference between predictions and target in a flattened array.
+def eval(targets, preds, n_preds, err_func):
+        return [err_func(target[-n_preds:], pred) for target, pred in zip(targets, preds)]
 
-    Args: 
-        predictions (TimeSeries): TimeSeries of predictions where each entry is a vector of length n_preds.
-        target (TimeSeries): TimeSeries of target values where the last n_preds entries are the target values.
-    """
-    return [ np.sqrt( (( target[-1:].data_array().squeeze() - pred[-1:].data_array().squeeze() )**2).to_numpy() ) for target, pred in zip(target, predictions) ]
-
-def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats, 
+def df_error(metric, output_length,
+            preds_train_nbeats, preds_test_nbeats, preds_val_nbeats, 
             preds_train_rf, preds_test_rf, preds_val_rf, 
-            preds_train_xgb, preds_test_xgb, preds_val_xgb, 
+            preds_train_xgb, preds_test_xgb, preds_val_xgb,
+            preds_train_lin_reg, preds_test_lin_reg, preds_val_lin_reg, 
             train_target, test_target, val_target):
     """
     Calculate RMSE for each model and each dataset.
 
     Args:
+        metric (PyTorch metric) : Error metric.
+        n_preds (Int) : number of points to forecast
         preds_train_nbeats (TimeSeries): TimeSeries of predictions for the train set for the NBEATS model.
         preds_test_nbeats (TimeSeries): TimeSeries of predictions for the test set for the NBEATS model.
         preds_val_nbeats (TimeSeries): TimeSeries of predictions for the validation set for the NBEATS model.
@@ -408,8 +405,6 @@ def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats,
     Returns:
         df_res (pd.DataFrame): DataFrame with RMSE for each model and each dataset.
     """
-    def calculate_rmse(predictions, target):
-        return rmse_residual_vector(predictions=predictions, target=target)
 
     models = {
         'nbeats': {
@@ -427,27 +422,34 @@ def rmse_df(preds_train_nbeats, preds_test_nbeats, preds_val_nbeats,
             'test': preds_test_xgb,
             'val': preds_val_xgb,
         },
+        'lin_reg' : {
+                'train' : preds_train_lin_reg,
+                'test' : preds_test_lin_reg,
+                'val' : preds_val_lin_reg  
+        }
     }
 
     df_res = pd.DataFrame()
 
     for model_name, model_data in models.items():
-        rmse_train = calculate_rmse(model_data['train'], train_target)
-        rmse_test = calculate_rmse(model_data['test'], test_target)
-        rmse_val = calculate_rmse(model_data['val'], val_target)
-        rmse_total = rmse_train + rmse_test + rmse_val
+        res_train = eval(targets=train_target, preds=model_data['train'], n_preds=output_length, err_func=metric)
+        res_test = eval(targets=test_target, preds=model_data['test'], n_preds=output_length, err_func=metric)
+        res_val = eval(targets=val_target, preds=model_data['val'], n_preds=output_length, err_func=metric)
+        res_total = res_train + res_test + res_val
         
         model_results = {
-            f'res_{model_name}_train': rmse_train,
-            f'res_{model_name}_test': rmse_test,
-            f'res_{model_name}_val': rmse_val,
-            f'res_{model_name}': rmse_total,
+            f'res_{model_name}_train': res_train,
+            f'res_{model_name}_test': res_test,
+            f'res_{model_name}_val': res_val,
+            f'res_{model_name}': res_total,
         }
-        
-        df_res = df_res.append(model_results, ignore_index=True)
+        # add results as new columns to the dataframe
+        df_res = pd.concat([df_res, pd.DataFrame.from_dict(model_results, orient='index').transpose()], axis=1)
+
         
     df_res = df_res[['res_nbeats_train', 'res_nbeats_test', 'res_nbeats_val', 'res_nbeats',
                     'res_rf_train', 'res_rf_test', 'res_rf_val', 'res_rf',
-                    'res_xgb_train', 'res_xgb_test', 'res_xgb_val', 'res_xgb']]
+                    'res_xgb_train', 'res_xgb_test', 'res_xgb_val', 'res_xgb',
+                     'res_lin_reg_train', 'res_lin_reg_test', 'res_lin_reg_val', 'res_lin_reg']]
     
     return df_res

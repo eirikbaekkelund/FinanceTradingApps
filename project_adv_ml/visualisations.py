@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
+from darts.metrics import smape, mse, rmse
 
 def plot_scatter_log(df, col1, col2):
     """
@@ -130,38 +131,45 @@ def plot_predictions(predictions, targets, scalers, tickers):
             axes[k].set_title(f"{tickers[k]}", fontweight='bold')
     plt.show()
 
-def plot_residuals(df):
-    assert 'res_nbeats_train' in df.columns, "residuals not found in dataframe"
-    assert 'res_rf_train' in df.columns, "residuals not found in dataframe"
-    assert 'res_xgb_train' in df.columns, "residuals not found in dataframe"
-    assert 'res_nbeats_val' in df.columns, "residuals not found in dataframe"
-    assert 'res_rf_val' in df.columns, "residuals not found in dataframe"
-    assert 'res_xgb_val' in df.columns, "residuals not found in dataframe"
-    assert 'res_nbeats_test' in df.columns, "residuals not found in dataframe"
-    assert 'res_rf_test' in df.columns, "residuals not found in dataframe"
-    assert 'res_xgb_test' in df.columns, "residuals not found in dataframe"
+def plot_residuals(df, metric):
+    residual_columns = ['res_nbeats_train', 'res_rf_train', 'res_xgb_train',
+                        'res_nbeats_val', 'res_rf_val', 'res_xgb_val',
+                        'res_nbeats_test', 'res_rf_test', 'res_xgb_test',
+                        'res_lin_reg_train', 'res_lin_reg_val', 'res_lin_reg_test']
+    assert all(col in df.columns for col in residual_columns), "residuals not found in dataframe"
+    
+    colors = ['red', 'blue', 'green', 'orange']
     
     fig, ax = plt.subplots(nrows=1, ncols=3, sharey=False, figsize=(20, 5))
-
-    sns.histplot(data=df, x='res_nbeats_train', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[0])
-    sns.histplot(data=df, x='res_rf_train', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[0])
-    sns.histplot(data=df, x='res_xgb_train', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[0])
-    ax[0].set_title("Training Residuals", fontweight='bold')
-    ax[0].set_xlabel("RMSE")
-
-    sns.histplot(data=df, x='res_nbeats_val', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[1])
-    sns.histplot(data=df, x='res_rf_val', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[1])
-    sns.histplot(data= df, x='res_xgb_val', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[1])
-    ax[1].set_title('Validation Residuals', fontweight='bold')
-    ax[1].set_xlabel("RMSE")
-
-    sns.histplot(data=df, x='res_nbeats_test', label='N-BEATS', color='red', alpha=0.3, kde=True, ax=ax[2])
-    sns.histplot(data=df, x='res_rf_test', label='Random Forest', color='blue', alpha=0.3, kde=True, ax=ax[2])
-    sns.histplot(data=df, x='res_xgb_test', label='XGBoost', color='green', alpha=0.3, kde=True, ax=ax[2])
-    ax[2].set_title('Test Residuals', fontweight='bold')
-    ax[2].set_xlabel("RMSE")
-
-
-
+    
+    for i, subset in enumerate(['train', 'val', 'test']):
+        cols = [f"res_{model}_{subset}" for model in ['nbeats', 'rf', 'xgb', 'lin_reg']]
+        for j, col in enumerate(cols):
+            label = col.split('_')[1]
+            sns.histplot(data=df, x=col, color=colors[j], alpha=0.3, kde=True, ax=ax[i], bins=8, label=f'{label.upper()}')
+        ax[i].set_title(f"{subset.capitalize()} Residuals", fontweight='bold')
+        ax[i].set_xlabel(f"{metric.upper()}")
     plt.legend()
     plt.show()
+
+def print_table(output_length, targets, preds_nbeats, preds_rf, preds_xgb, preds_lin_reg, preds_analysts, subset):
+    print(f'\t\t\t\t {subset.upper()} TABLE')
+    print('-'*77)
+    print('| Metric | N-BEATS \t | RF \t  | XGB    | Lin Reg \t | Analysts')
+    print('-'*77)
+    for metric in [rmse, mse, smape]:
+
+      nbeats = eval(targets=targets, preds=preds_nbeats, n_preds=output_length, err_func=metric)
+      rf = eval(targets=targets, preds=preds_rf, n_preds=output_length, err_func=metric)
+      xgb = eval(targets=targets, preds=preds_xgb, n_preds=output_length, err_func=metric)
+      lin_reg = eval(targets=targets, preds=preds_lin_reg, n_preds=output_length, err_func=metric)
+      analysts = eval(targets=targets, preds=preds_analysts, n_preds=1, err_func=metric)
+      
+      metric_label = str(metric).split(' ')[1]
+      
+      if metric_label != 'smape':
+        print(f"| {metric_label} \t | {np.mean(nbeats):.4f} \t | {np.mean(rf):.4f} | {np.mean(xgb):.4f} | {np.mean(lin_reg):.4f} \t | {np.mean(analysts):.4f}")
+      else:
+        print(f"| {metric_label}  | {np.mean(nbeats):.3f} \t | {np.mean(rf):.3f} | {np.mean(xgb):.3f}  | {np.mean(lin_reg):.3f} \t | {np.mean(analysts):.3f}")
+
+      print('-'*77)

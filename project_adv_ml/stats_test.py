@@ -1,6 +1,9 @@
 import numpy as np
 from scipy.stats import chi2
 
+import numpy as np
+from scipy.stats import chi2
+
 def giacomini_white_test_equal(res1, res2, num_lags, alpha=0.05):
     """
     Performs the Giacomini-White test of equal predictive ability for two regression models.
@@ -14,13 +17,13 @@ def giacomini_white_test_equal(res1, res2, num_lags, alpha=0.05):
     Returns:
         p_value: float p-value of the test
     """
-    # residual difference between the two models
+    # Calculate the residuals of the difference between the two models
     diff_res = res1 - res2
 
-    # sample variance of the difference in residuals
+    # Calculate the sample variance of the difference in residuals
     sigma2 = np.var(diff_res, ddof=1)
 
-    # squared residuals at each lag up to num_lags
+    # Calculate the squared residuals at each lag up to num_lags
     squared_residuals = np.square(diff_res)
     autocorr = np.correlate(squared_residuals, squared_residuals, mode='full')
     autocorr = autocorr[autocorr.size // 2:]
