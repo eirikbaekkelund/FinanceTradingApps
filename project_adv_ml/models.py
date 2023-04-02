@@ -11,6 +11,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # k fold cross validation could be used for tree based methods, expensive for NBEATS
 # TODO remove n_jobs, not a parameter of the model for xgboost and random forest
 # TODO add early stopping for all models, especially NBEATS
+# TODO add support for past covariates to XGB and RF
 
 class HyperparameterOptimizationNBEATS:
     """
