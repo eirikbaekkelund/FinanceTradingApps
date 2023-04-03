@@ -238,7 +238,6 @@ def impute_normal_sample(df, company, column):
     
     # get the y estimate values at the nan index
     y_estimate = df_company.loc[nan_index, column_estimate]
-    print(y_estimate, nan_index)
     # get the standard deviation as the difference between the estimate and the actual at the non nan index
     std = np.std(df_company.loc[non_nan_index, column] - df_company.loc[non_nan_index, column_estimate])
     y_pred = np.random.multivariate_normal(y_estimate, std * np.eye(len(y_estimate)) )
@@ -249,7 +248,7 @@ def impute_normal_sample(df, company, column):
 
 def impute_values(df):
     # get the list of companies with nan values
-    nan_companies = dw.get_nan_columns(df)
+    nan_companies = get_nan_columns(df)
     company_list_panel_B = nan_companies['nw_total_sales_b_total']
     company_list_panel_A = nan_companies['nw_total_sales_a_total']
 
